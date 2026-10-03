@@ -47,3 +47,21 @@ input,select{font:inherit;width:100%;padding:13px;border:1px solid #d1d5db;borde
 .tabs button span{font-size:12px}.tabs button.on{color:var(--g)}
 #toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:#111827;color:#fff;padding:10px 16px;border-radius:999px;z-index:10;font-size:15px}
 .empty{color:var(--m);text-align:center;padding:20px}
+.pos{color:#15803d}.neg{color:#dc2626}
+.bal{background:linear-gradient(135deg,#16a34a,#0f766e);color:#fff;border-radius:18px;padding:16px 18px;box-shadow:0 4px 14px #16a34a44}
+.bal-t{font-size:15px;opacity:.9}.bal-v{font-size:40px;font-weight:800;margin:2px 0}.bal-v.minus{color:#fecaca}.bal-x{font-size:17px;font-weight:600;opacity:.95}
+.bal-m{display:flex;gap:10px;margin-top:10px}.bal-m>div{flex:1;background:#ffffffee;border-radius:12px;padding:8px 10px}
+.bal-m small{display:block;color:#4b5563;font-size:12px}.bal-m b{font-size:18px}
+.modes .btn{margin-top:0;font-weight:700;font-size:20px;min-height:60px;color:#fff;opacity:.55}
+.modes .inc{background:#16a34a;border-color:#16a34a}.modes .exp{background:#dc2626;border-color:#dc2626}
+.modes .btn.on{opacity:1}.modes .inc.on{box-shadow:0 0 0 3px #f4f6f5,0 0 0 5px #16a34a}.modes .exp.on{box-shadow:0 0 0 3px #f4f6f5,0 0 0 5px #dc2626}
+.form-t{font-weight:700;font-size:18px;margin:6px 0 0}
+body.mode-inc .form-t{color:#15803d}body:not(.mode-inc) .form-t{color:#dc2626}
+body.mode-inc .cats button.on{background:#16a34a;border-color:#16a34a}
+body:not(.mode-inc) #saveBtn{background:#dc2626;border-color:#dc2626}
+.list li .a.pos{color:#15803d}.list li .a.neg{color:#dc2626}
+.list li.inc{border-left:5px solid #16a34a}.list li.exp{border-left:5px solid #fca5a5}
+.rs{background:#fff;border-radius:16px;padding:12px 14px;margin-bottom:10px}
+.rs h3{margin:0 0 4px;font-size:16px;display:flex;justify-content:space-between}
+.rs .bar .t div.g{background:#16a34a}.rs .bar .t div.r{background:#dc2626}
+.rs.sum{display:flex;gap:10px}.rs.sum>div{flex:1}.rs.sum small{display:block;color:var(--m);font-size:13px}.rs.sum b{font-size:19px}

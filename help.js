@@ -15,11 +15,13 @@ if(!standalone){
 }
 
 const steps=[
- ['✍️','Dodaj wydatek','Wpisz kwotę, stuknij kategorię i <b>Zapisz wydatek</b>. Data to dziś (możesz zmienić).'],
- ['🎤','Głosem','Stuknij <b>🎤 Powiedz</b> albo 🎤 na klawiaturze iPhone’a i powiedz np. <i>„Biedronka 45 złotych jedzenie”</i>. Sprawdź i zapisz.'],
+ ['💰','Moje pieniądze','Zielona karta na górze pokazuje, <b>ile Ci zostało</b> (wszystkie wpływy − wszystkie wydatki) oraz wpływy i wydatki w tym miesiącu. Na start wpisz, ile masz teraz: Ustawienia → <b>Stan początkowy</b>.'],
+ ['💚','Wpływ (dostałaś pieniądze)','Stuknij zielone <b>+ Wpływ</b>, wpisz kwotę, wybierz źródło (np. Wypłata, Przelew od kogoś), w notatce od kogo. <b>Zapisz wpływ</b>.'],
+ ['❤️','Wydatek','Stuknij czerwone <b>− Wydatek</b>, wpisz kwotę, stuknij kategorię i <b>Zapisz wydatek</b>. Data to dziś (możesz zmienić).'],
+ ['🎤','Głosem','Stuknij <b>🎤 Powiedz</b> albo 🎤 na klawiaturze iPhone’a i powiedz np. <i>„Biedronka 45 złotych jedzenie”</i> albo <i>„wypłata 3500”</i>, <i>„dostałam 200 od mamy”</i>. Sprawdź i zapisz.'],
  ['📷','Paragon','Stuknij <b>📷 Paragon</b>, zrób zdjęcie. Aplikacja podpowie sumę – <b>sprawdź ją</b> i popraw, jeśli trzeba.'],
- ['✏️','Popraw lub usuń','Stuknij wydatek na liście → zmień i <b>Zapisz zmiany</b> albo <b>Usuń wydatek</b>.'],
- ['📊','Raporty','Zakładka <b>Raporty</b>: Dzień / Tydzień / Miesiąc, strzałki ‹ › zmieniają okres. <b>CSV</b> do Excela, <b>Udostępnij</b> wysyła podsumowanie.'],
+ ['✏️','Popraw lub usuń','Stuknij wpis na liście → zmień i <b>Zapisz zmiany</b> albo <b>Usuń wydatek</b>.'],
+ ['📊','Raporty','Zakładka <b>Raporty</b>: Dzień / Tydzień / Miesiąc – wpływy, wydatki, bilans i saldo. Strzałki ‹ › zmieniają okres. <b>CSV</b> do Excela, <b>Udostępnij</b> wysyła podsumowanie.'],
  ['💾','Kopia zapasowa','Dane są <b>tylko na tym telefonie</b>. Co jakiś czas: Ustawienia → <b>Zapisz kopię</b> i zachowaj plik (np. w mailu lub iCloud).']
 ];
 

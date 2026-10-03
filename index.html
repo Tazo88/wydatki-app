@@ -20,24 +20,35 @@
 <main>
 <!-- DODAJ -->
 <section id="tab-add" class="tab active">
+  <div class="bal" id="balCard">
+    <div class="bal-t">💰 Moje pieniądze — zostało</div>
+    <div class="bal-v" id="balMain">0,00 zł</div>
+    <div class="bal-x" id="balEur"></div>
+    <div class="bal-m"><div><small>Wpływy (<span class="mName"></span>)</small><b class="pos" id="mInc">0,00 zł</b></div><div><small>Wydatki (<span class="mName"></span>)</small><b class="neg" id="mExp">0,00 zł</b></div></div>
+  </div>
+  <div class="row modes">
+    <button type="button" id="modeInc" class="btn big inc">+ Wpływ</button>
+    <button type="button" id="modeExp" class="btn big exp on">− Wydatek</button>
+  </div>
   <form id="form" autocomplete="off">
+    <div class="form-t" id="formTitle">Nowy wydatek</div>
     <div class="row amount-row">
       <input id="amount" type="text" inputmode="decimal" placeholder="0,00" aria-label="Kwota" required>
       <select id="currency" aria-label="Waluta"><option>PLN</option><option>EUR</option></select>
     </div>
     <div class="row quick">
       <button type="button" id="micBtn" class="btn big ghost">🎤 Powiedz</button>
-      <label class="btn big ghost" for="photo">📷 Paragon</label>
+      <label class="btn big ghost" for="photo" id="photoBtn">📷 Paragon</label>
       <input id="photo" type="file" accept="image/*" capture="environment" hidden>
     </div>
     <p id="voiceInfo" class="hint"></p>
     <p id="status" class="status" hidden></p>
     <div id="photoPrev" hidden><img id="thumb" alt="paragon"><button type="button" id="rmPhoto" class="btn small ghost">Usuń zdjęcie</button></div>
 
-    <label class="lbl">Kategoria</label>
+    <label class="lbl" id="catLbl">Kategoria</label>
     <div id="cats" class="cats"></div>
 
-    <label class="lbl" for="note">Notatka / sklep (opcjonalnie)</label>
+    <label class="lbl" for="note" id="noteLbl">Notatka / sklep (opcjonalnie)</label>
     <input id="note" type="text" placeholder="np. Biedronka">
 
     <label class="lbl" for="date">Data</label>
@@ -61,8 +72,7 @@
     <strong id="periodLabel"></strong>
     <button id="next" class="btn ghost">›</button>
   </div>
-  <div class="total" id="repTotal"></div>
-  <div id="bars"></div>
+  <div id="repSum"></div>
   <div class="row">
     <button id="csvBtn" class="btn ghost">⬇️ CSV (Excel)</button>
     <button id="shareBtn" class="btn ghost">📤 Udostępnij</button>
@@ -72,15 +82,25 @@
 
 <!-- USTAWIENIA -->
 <section id="tab-set" class="tab">
-  <h2 class="sub">Kategorie</h2>
+  <h2 class="sub">Stan początkowy</h2>
+  <p class="hint">Ile masz teraz pieniędzy (np. na koncie + gotówka)? Saldo = stan początkowy + wpływy − wydatki.</p>
+  <div class="row"><input id="startPLN" type="text" inputmode="decimal" placeholder="0,00 zł"><input id="startEUR" type="text" inputmode="decimal" placeholder="0,00 €"></div>
+  <button id="saveStart" class="btn big primary">Zapisz stan początkowy</button>
+  <h2 class="sub">Domyślna waluta</h2>
+  <p class="hint">Nowe wpisy startują w tej walucie (zmienia się też sama na ostatnio użytą).</p>
+  <select id="defCur"><option>PLN</option><option>EUR</option></select>
+  <h2 class="sub">Kategorie wydatków</h2>
   <div class="row"><input id="newCat" type="text" placeholder="Nowa kategoria"><button id="addCat" class="btn primary">Dodaj</button></div>
   <ul id="catList" class="list"></ul>
+  <h2 class="sub">Źródła wpływów</h2>
+  <div class="row"><input id="newInc" type="text" placeholder="Nowe źródło"><button id="addInc" class="btn primary">Dodaj</button></div>
+  <ul id="incList" class="list"></ul>
   <h2 class="sub">Kopia zapasowa</h2>
   <p class="hint">Dane są tylko na tym telefonie. Rób czasem kopię i zachowaj plik (np. w chmurze / mailu).</p>
   <button id="backupBtn" class="btn big ghost">💾 Zapisz kopię (JSON)</button>
   <label class="btn big ghost" for="restore">📂 Wczytaj kopię</label>
   <input id="restore" type="file" accept="application/json,.json" hidden>
-  <button id="csvAll" class="btn big ghost">⬇️ Wszystkie wydatki CSV</button>
+  <button id="csvAll" class="btn big ghost">⬇️ Wszystko do CSV</button>
   <h2 class="sub">Instalacja</h2>
   <p class="hint">iPhone (Safari): Udostępnij ⬆️ → „Do ekranu początkowego”. Android (Chrome): menu ⋮ → „Dodaj do ekranu głównego” / „Zainstaluj aplikację”.</p>
   <p class="hint">Wskazówka: na iPhonie możesz też dyktować z klawiatury (ikona 🎤 na klawiaturze) w polach kwoty i notatki.</p>
