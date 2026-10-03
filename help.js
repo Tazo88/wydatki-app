@@ -19,7 +19,7 @@ const steps=[
  ['💚','Wpływ (dostałaś pieniądze)','Stuknij zielone <b>+ Wpływ</b>, wpisz kwotę, wybierz źródło (np. Wypłata, Przelew od kogoś), w notatce od kogo. <b>Zapisz wpływ</b>.'],
  ['❤️','Wydatek','Stuknij czerwone <b>− Wydatek</b>, wpisz kwotę, stuknij kategorię i <b>Zapisz wydatek</b>. Data to dziś (możesz zmienić).'],
  ['🎤','Głosem','Stuknij <b>🎤 Powiedz</b> albo 🎤 na klawiaturze iPhone’a i powiedz np. <i>„Biedronka 45 złotych jedzenie”</i> albo <i>„wypłata 3500”</i>, <i>„dostałam 200 od mamy”</i>. Sprawdź i zapisz.'],
- ['📷','Paragon','Stuknij <b>📷 Paragon</b>, zrób zdjęcie. Aplikacja podpowie sumę – <b>sprawdź ją</b> i popraw, jeśli trzeba.'],
+ ['📷','Paragon (AI)','Stuknij <b>📷 Paragon</b> i zrób ostre zdjęcie całego paragonu. AI odczyta sklep, datę, walutę, produkty i ich kategorie. Na ekranie <b>Sprawdź paragon</b> popraw, co trzeba, i stuknij <b>Zapisz wg kategorii</b> (osobny wydatek dla każdej kategorii, oznaczony 🧾) albo <b>Zapisz jako jeden</b>. Długi paragon? <b>Dodaj kolejne zdjęcie</b>. ⚠️ żółta ramka = produkty nie sumują się do kwoty paragonu.'],
  ['✏️','Popraw lub usuń','Stuknij wpis na liście → zmień i <b>Zapisz zmiany</b> albo <b>Usuń wydatek</b>.'],
  ['📊','Raporty','Zakładka <b>Raporty</b>: Dzień / Tydzień / Miesiąc – wpływy, wydatki, bilans i saldo. Strzałki ‹ › zmieniają okres. <b>CSV</b> do Excela, <b>Udostępnij</b> wysyła podsumowanie.'],
  ['💾','Kopia zapasowa','Dane są <b>tylko na tym telefonie</b>. Co jakiś czas: Ustawienia → <b>Zapisz kopię</b> i zachowaj plik (np. w mailu lub iCloud).']
