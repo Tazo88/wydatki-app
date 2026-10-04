@@ -1,5 +1,13 @@
 name = "wydatki-receipt"
 main = "worker.js"
 compatibility_date = "2026-09-01"
-workers_dev = true
-# Secret (nie w repo): npx wrangler secret put GEMINI_API_KEY
+
+[triggers]
+crons = ["*/5 * * * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "wydatki"
+database_id = "d9f5d8ce-9417-4d9f-adb0-1d385e539a43"
+
+# Sekret: wrangler secret put GEMINI_API_KEY  (nigdy nie wpisuj klucza tutaj)

@@ -1,13 +1,19 @@
-# Proxy paragonów (Cloudflare Worker)
+# Backend Wydatki (Cloudflare Worker + D1)
 
-Przyjmuje `POST` z JSON `{images:[{mime,data(base64)}], categories:[...]}` od https://tazo88.github.io,
-woła Gemini (structured JSON) i zwraca: shop, country, date, currency, total, vat[], items[{name,qty,price,category}], check{itemsSum,total,diff,matches}.
+Jeden worker `wydatki-receipt` (https://wydatki-receipt.tazo88.workers.dev):
 
-Ochrona: tylko Origin tazo88.github.io (CORS), limit 6 MB, max 4 zdjęcia, prosty limit zapytań na IP.
+- `POST /` – odczyt paragonu przez Gemini (bez konta, limit 6/min i 60/dzień na IP).
+- `/api/*` – konta, synchronizacja, wspólny dom, Plan, przypomnienia push, AI (`/api/parse`, `/api/where`).
 
-Wdrożenie:
-```
-npx wrangler deploy
-npx wrangler secret put GEMINI_API_KEY
-```
-Opcjonalnie zmienna `MODEL` (domyślnie gemini-3.5-flash, zapasowy gemini-flash-latest).
+Bezpieczeństwo:
+- Klucz Gemini tylko jako secret `GEMINI_API_KEY` (nigdy w repo/aplikacji).
+- Tokeny sesji, kody logowania, kody zaproszeń i klucze odzyskiwania zapisane tylko jako SHA-256; kody jednorazowe i z terminem ważności.
+- Pieniądze (`entries`, `user_kv`) mają klucz `(user_id, id)` – nikt inny nie może ich odczytać ani nadpisać. Plan ma klucz `(household_id, id)`.
+- Limity w D1 (globalne, nie per instancja), CORS tylko dla https://tazo88.github.io, zapytania SQL wyłącznie z parametrami.
+- Klucze VAPID generuje worker i trzyma w D1; push szyfrowany (RFC 8291), adresy push tylko znanych usług (bez SSRF).
+- Cron co 5 min: przypomnienia + sprzątanie.
+
+Testy: `tests/api.mjs` (10 punktów bezpieczeństwa), `tests/e2e.mjs` (dwie osoby w przeglądarce), `tests/client.mjs`.
+
+Wdrożenie: `wrangler deploy` (D1 `wydatki` już podpięta) albo przez API Cloudflare. Sekret: `wrangler secret put GEMINI_API_KEY`.
+Nie ustawiaj `TEST_PUSH_ORIGIN` ani `DEV_ORIGIN` w produkcji (tylko do testów lokalnych).
