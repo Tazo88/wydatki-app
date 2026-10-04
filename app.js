@@ -34,7 +34,7 @@ let period='m', anchor=new Date();
 
 // ---------- tabs ----------
 document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>showTab(b.dataset.t));
-function showTab(t){document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x.dataset.t===t));document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.id==='tab-'+t));if(t==='rep')renderReport();if(t==='set')renderCatList();window.scrollTo(0,0)}
+function showTab(t){if(!document.getElementById('tab-'+t))t='add';document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x.dataset.t===t));document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.id==='tab-'+t));if(t==='rep')renderReport();if(t==='set')renderCatList();window.scrollTo(0,0)}
 
 // ---------- form ----------
 function renderCats(){const el=$('#cats');el.innerHTML='';const inc=mode==='inc';(inc?incCats:cats).forEach(c=>{const b=document.createElement('button');b.type='button';b.textContent=c;if(c===(inc?selInc:selCat))b.classList.add('on');b.onclick=()=>{if(inc)selInc=c;else selCat=c;renderCats()};el.appendChild(b)})}
@@ -132,7 +132,10 @@ else{
   $('#micBtn').onclick=()=>{
     const r=new SR();r.lang='pl-PL';r.interimResults=false;r.maxAlternatives=1;
     status('🎤 Słucham…');
-    r.onresult=e=>{const txt=e.results[0][0].transcript;const p=parseVoice(txt);
+    r.onresult=async e=>{const txt=e.results[0][0].transcript;let p=null;
+      if(window.WY&&WY.loggedIn()&&navigator.onLine){status('✨ Rozumiem: „'+txt+'”…');try{p=await WY.aiMoney(txt)}catch(err){p=null}}
+      if(!p)p=parseVoice(txt);else if(p.date&&/^\d{4}-\d{2}-\d{2}$/.test(p.date))$('#date').value=p.date;
+      if(p.type==='inc'&&p.category&&!incCats.includes(p.category))p.category=null;if(p.type!=='inc'&&p.category&&!cats.includes(p.category))p.category=null;
       if(p.type==='inc'){if(p.category)selInc=p.category;setMode('inc')}else if(p.category){selCat=p.category;setMode('exp')}
       if(p.amount)$('#amount').value=String(p.amount).replace('.',',');
       if(p.currency)$('#currency').value=p.currency;

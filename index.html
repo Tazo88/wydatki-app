@@ -13,7 +13,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-<link rel="stylesheet" href="style.css?v=6">
+<link rel="stylesheet" href="style.css?v=7">
 </head>
 <body>
 <header><h1>Wydatki</h1><span id="hdrTotal"></span></header>
@@ -81,6 +81,9 @@
   <ul id="repList" class="list"></ul>
 </section>
 
+<!-- PLAN (wspólny) -->
+<section id="tab-plan" class="tab"></section>
+
 <!-- USTAWIENIA -->
 <section id="tab-set" class="tab">
   <h2 class="sub">Stan początkowy</h2>
@@ -97,7 +100,7 @@
   <div class="row"><input id="newInc" type="text" placeholder="Nowe źródło"><button id="addInc" class="btn primary">Dodaj</button></div>
   <ul id="incList" class="list"></ul>
   <h2 class="sub">Kopia zapasowa</h2>
-  <p class="hint">Dane są tylko na tym telefonie. Rób czasem kopię i zachowaj plik (np. w chmurze / mailu).</p>
+  <p class="hint">Bez konta dane są tylko na tym telefonie. Rób czasem kopię i zachowaj plik (np. w chmurze / mailu). Z kontem są też w chmurze.</p>
   <button id="backupBtn" class="btn big ghost">💾 Zapisz kopię (JSON)</button>
   <label class="btn big ghost" for="restore">📂 Wczytaj kopię</label>
   <input id="restore" type="file" accept="application/json,.json" hidden>
@@ -113,11 +116,14 @@
 <nav class="tabs">
   <button data-t="add" class="on">➕<span>Dodaj</span></button>
   <button data-t="rep">📊<span>Raporty</span></button>
+  <button data-t="plan">📅<span>Plan</span></button>
   <button data-t="set">⚙️<span>Ustawienia</span></button>
 </nav>
 <div id="toast" hidden></div>
-<script src="app.js?v=6"></script>
-<script src="receipt.js?v=6"></script>
-<script src="help.js?v=6"></script>
+<script src="app.js?v=7"></script>
+<script src="receipt.js?v=7"></script>
+<script src="sync.js?v=7"></script>
+<script src="plan.js?v=7"></script>
+<script src="help.js?v=7"></script>
 </body>
 </html>
