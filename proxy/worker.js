@@ -13,7 +13,7 @@ const PUSH_HOSTS = [/^fcm\.googleapis\.com$/, /^android\.googleapis\.com$/, /(^|
 // limity: [ile, okno w sekundach]
 const LIM = {
   register: [5, 3600], recover: [10, 3600], redeem: [10, 600], mkcode: [10, 3600],
-  invite: [10, 3600], joinU: [10, 3600], joinIP: [20, 3600],
+  invite: [10, 3600], joinU: [10, 3600], joinIP: [20, 3600], failAll: [100, 3600],
   receiptMin: [6, 60], receiptDay: [60, 86400], parseMin: [15, 60], parseDay: [200, 86400],
   whereMin: [6, 60], whereDay: [50, 86400], geminiGlobal: [3000, 86400], push: [20, 3600],
 };
@@ -91,7 +91,20 @@ async function auth(req, env) {
   }
   return u;
 }
-const ip = req => req.headers.get('CF-Connecting-IP') || 'x';
+// klucz limitu: IPv4 albo prefiks /64 dla IPv6 (jedno łącze ma wiele adresów IPv6)
+const ip = req => {
+  const a = req.headers.get('CF-Connecting-IP') || 'x';
+  if (!a.includes(':')) return a;
+  const [h, t] = a.split('::'), hs = h ? h.split(':') : [], ts = t === undefined ? [] : t ? t.split(':') : [];
+  const full = t === undefined ? hs : [...hs, ...Array(Math.max(0, 8 - hs.length - ts.length)).fill('0'), ...ts];
+  return full.slice(0, 4).map(x => (parseInt(x, 16) || 0).toString(16)).join(':') + '::/64';
+};
+// globalny bezpiecznik na nieudane próby (gdyby ktoś zgadywał z wielu adresów naraz)
+async function failGuard(env, key, limit) {
+  const r = await env.DB.prepare('SELECT n, reset FROM rate WHERE k=?').bind(key).first();
+  if (r && r.reset > now() && r.n >= limit) fail(429, 'rate_limited');
+}
+const failed = (env, key, lim) => hit(env, key, lim).catch(() => {});
 
 async function register(env, req, body) {
   await hit(env, 'reg:' + ip(req), LIM.register);
@@ -108,10 +121,10 @@ async function register(env, req, body) {
 }
 async function recover(env, req, body) {
   await hit(env, 'rec:' + ip(req), LIM.recover);
+  await failGuard(env, 'fail:rec', LIM.failAll[0]);
   const k = normCode(body.key);
-  if (k.length !== 24) fail(401, 'bad_key');
-  const u = await env.DB.prepare('SELECT id,name FROM users WHERE recovery_hash=?').bind(await sha('rk:' + k)).first();
-  if (!u) fail(401, 'bad_key');
+  const u = k.length === 24 ? await env.DB.prepare('SELECT id,name FROM users WHERE recovery_hash=?').bind(await sha('rk:' + k)).first() : null;
+  if (!u) { await failed(env, 'fail:rec', LIM.failAll); fail(401, 'bad_key'); }
   return { token: await newSession(env, u.id), user: u };
 }
 async function makeLoginCode(env, u) {
@@ -123,11 +136,11 @@ async function makeLoginCode(env, u) {
 }
 async function redeem(env, req, body) {
   await hit(env, 'red:' + ip(req), LIM.redeem);
+  await failGuard(env, 'fail:red', LIM.failAll[0]);
   const c = normCode(body.code);
-  if (c.length !== 10) fail(401, 'bad_code');
   // jednorazowy: usuwamy przy odczycie (atomowo)
-  const r = await env.DB.prepare('DELETE FROM login_codes WHERE hash=? RETURNING user_id, expires').bind(await sha('lc:' + c)).first();
-  if (!r || r.expires < now()) fail(401, 'bad_code');
+  const r = c.length === 10 ? await env.DB.prepare('DELETE FROM login_codes WHERE hash=? RETURNING user_id, expires').bind(await sha('lc:' + c)).first() : null;
+  if (!r || r.expires < now()) { await failed(env, 'fail:red', LIM.failAll); fail(401, 'bad_code'); }
   const u = await env.DB.prepare('SELECT id,name FROM users WHERE id=?').bind(r.user_id).first();
   if (!u) fail(401, 'bad_code');
   return { token: await newSession(env, u.id), user: u };
@@ -160,10 +173,10 @@ async function moveTo(env, u, target) {
 async function join(env, req, u, body) {
   await hit(env, 'joinip:' + ip(req), LIM.joinIP);
   await hit(env, 'join:' + u.id, LIM.joinU);
+  await failGuard(env, 'fail:join', LIM.failAll[0] * 2);
   const c = normCode(body.code);
-  if (c.length !== 8) fail(400, 'bad_code');
-  const inv = await env.DB.prepare('DELETE FROM invites WHERE hash=? RETURNING household_id, expires').bind(await sha('inv:' + c)).first();
-  if (!inv || inv.expires < now()) fail(400, 'bad_code');
+  const inv = c.length === 8 ? await env.DB.prepare('DELETE FROM invites WHERE hash=? RETURNING household_id, expires').bind(await sha('inv:' + c)).first() : null;
+  if (!inv || inv.expires < now()) { await failed(env, 'fail:join', [LIM.failAll[0] * 2, 3600]); fail(400, 'bad_code'); }
   if (inv.household_id === u.hid) fail(400, 'same_household');
   const cnt = await env.DB.prepare('SELECT COUNT(*) n FROM members WHERE household_id=?').bind(inv.household_id).first();
   if (!cnt.n) fail(400, 'bad_code');
@@ -347,7 +360,7 @@ async function gemini(env, gReq) {
   if (!env.GEMINI_API_KEY) fail(500, 'not_configured');
   await hit(env, 'gem:all', LIM.geminiGlobal);
   let r, d;
-  for (const m of [...new Set([env.MODEL || 'gemini-3.5-flash', env.FALLBACK_MODEL || 'gemini-flash-latest'])]) {
+  for (const m of [...new Set([env.MODEL || 'gemini-3.5-flash', env.FALLBACK_MODEL || 'gemini-flash-latest', 'gemini-3.5-flash-lite'])]) {
     try {
       r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY }, body: JSON.stringify(gReq) });
