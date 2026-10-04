@@ -1,5 +1,5 @@
-const C='wydatki-v7';
-const FILES=['./','index.html','style.css?v=7','app.js?v=7','help.js?v=7','receipt.js?v=7','sync.js?v=7','plan.js?v=7','manifest.webmanifest','icons/icon-192.png','icons/icon-512.png','icons/apple-touch-icon.png'];
+const C='wydatki-v8';
+const FILES=['./','index.html','style.css?v=8','app.js?v=8','help.js?v=8','receipt.js?v=8','sync.js?v=8','plan.js?v=8','manifest.webmanifest','icons/icon-192.png','icons/icon-512.png','icons/apple-touch-icon.png'];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(C).then(c=>c.addAll(FILES)).then(()=>self.skipWaiting()))});
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k)))).then(()=>self.clients.claim()))});
 self.addEventListener('fetch',e=>{

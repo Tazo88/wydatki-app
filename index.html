@@ -13,7 +13,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-<link rel="stylesheet" href="style.css?v=7">
+<link rel="stylesheet" href="style.css?v=8">
 </head>
 <body>
 <header><h1>Wydatki</h1><span id="hdrTotal"></span></header>
@@ -21,6 +21,7 @@
 <main>
 <!-- DODAJ -->
 <section id="tab-add" class="tab active">
+  <div class="seg who" hidden></div>
   <div class="bal" id="balCard">
     <div class="bal-t">💰 Moje pieniądze — zostało</div>
     <div class="bal-v" id="balMain">0,00 zł</div>
@@ -65,6 +66,7 @@
 
 <!-- RAPORTY -->
 <section id="tab-rep" class="tab">
+  <div class="seg who" hidden></div>
   <div class="seg" id="periodSeg">
     <button data-p="d">Dzień</button><button data-p="w">Tydzień</button><button data-p="m" class="on">Miesiąc</button>
   </div>
@@ -120,10 +122,10 @@
   <button data-t="set">⚙️<span>Ustawienia</span></button>
 </nav>
 <div id="toast" hidden></div>
-<script src="app.js?v=7"></script>
-<script src="receipt.js?v=7"></script>
-<script src="sync.js?v=7"></script>
-<script src="plan.js?v=7"></script>
-<script src="help.js?v=7"></script>
+<script src="app.js?v=8"></script>
+<script src="receipt.js?v=8"></script>
+<script src="sync.js?v=8"></script>
+<script src="plan.js?v=8"></script>
+<script src="help.js?v=8"></script>
 </body>
 </html>
