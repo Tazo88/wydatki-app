@@ -10,10 +10,10 @@ async function api(method,path,body){
   const h={};if(body!==undefined)h['Content-Type']='application/json';if(acct&&acct.token)h.Authorization='Bearer '+acct.token;
   let r;try{r=await fetch(API+path,{method,headers:h,body:body===undefined?undefined:JSON.stringify(body)})}catch(e){const er=new Error('offline');er.code='offline';throw er}
   let j=null;try{j=await r.json()}catch(e){}
-  if(r.status===401&&acct&&!/^\/api\/(login|register)/.test(path)){acct=null;LS.removeItem('acct');renderAcct()}
+  if(r.status===401&&acct&&!/^\/api\/(login|register)/.test(path))dropAcct();
   if(!r.ok){const er=new Error((j&&j.error)||('http_'+r.status));er.code=(j&&j.error)||r.status;er.status=r.status;throw er}
   return j}
-const ERR={rate_limited:'Za dużo prób – odczekaj chwilę i spróbuj ponownie.',bad_code:'Zły albo wygasły kod.',bad_key:'Zły klucz.',offline:'Brak internetu.',same_household:'Już jesteście w tym samym domu 🙂',full:'Ten dom jest pełny.',name:'Wpisz imię.'};
+const ERR={rate_limited:'Za dużo prób – odczekaj chwilę i spróbuj ponownie.',bad_code:'Zły albo wygasły kod.',bad_key:'Zły klucz.',offline:'Brak internetu.',same_household:'Już jesteście w tym samym domu 🙂',full:'Ten dom jest pełny.',name:'Wpisz imię.',invite_required:'Konto zakłada się tylko z kodem zaproszenia od osoby, która ma już konto.',not_shared:'Ta osoba nie udostępnia pieniędzy.'};
 const errMsg=e=>ERR[e.code]||('Błąd: '+e.message);
 
 // ---------- Plan (lokalnie + sync) ----------
@@ -71,7 +71,7 @@ async function sync(){
     const tb=J('tomb',{});for(const id in tb)if(tb[id]<=t0)delete tb[id];S('tomb',tb);
     LS.setItem('lastSync',String(Date.now()));
     if(moneyChanged){try{renderCats();await refresh()}catch(e){}}
-    changed();setSyncInfo('');
+    changed();setSyncInfo('');dispatchEvent(new Event('wy-synced'));
   }catch(e){setSyncInfo(e.code==='offline'?'📴 Offline – zsynchronizuję później':'⚠️ Synchronizacja: '+errMsg(e))}
   finally{syncing=false;if(again){again=false;setTimeout(sync,300)}}
 }
@@ -79,7 +79,13 @@ let tm;function soon(){clearTimeout(tm);tm=setTimeout(sync,1500)}
 addEventListener('wy-change',soon);addEventListener('online',sync);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)sync()});
 setInterval(()=>{if(!document.hidden)sync()},60000);
-async function refreshMe(){if(!acct)return;try{const r=await api('GET','/api/me');members=r.household.members;S('members',members);acct.user=r.user;S('acct',acct);renderAcct();changed()}catch(e){}}
+async function refreshMe(){if(!acct)return;try{const r=await api('GET','/api/me');members=r.household.members;S('members',members);acct.user=r.user;acct.share=!!r.share;acct.owner=!!r.owner;S('acct',acct);renderAcct();changed();who()}catch(e){}}
+const who=()=>{if(typeof renderWho==='function')renderWho()};
+function dropAcct(){acct=null;LS.removeItem('acct');members=[];S('members',[]);resetSync();flash='';renderAcct();who()}
+// pieniądze partnera: tylko podgląd, pobierane na żądanie (nie zapisywane na telefonie)
+async function partnerMoney(owner){let since='0:',more=true,entries=[],start=null;
+  for(let i=0;more&&i<50;i++){const r=await api('POST','/api/partner/money',{owner,since});entries=entries.concat(r.entries.map(e=>e.data&&typeof e.data==='object'?Object.assign({},e.data,{id:e.id}):null).filter(Boolean));start=r.start;since=r.since;more=r.more}
+  return{entries,start}}
 function resetSync(){['syncSince','planSince','pushedAt','kvSnap'].forEach(k=>LS.removeItem(k))}
 function setAcct(r){acct={token:r.token,user:r.user};S('acct',acct);resetSync();LS.removeItem(PLAN_KEY+'Old')}
 
@@ -115,16 +121,18 @@ function renderAcct(){
 }
 function _render(){
   if(!acct){box.innerHTML=`<h2 class="sub">👤 Konto i wspólny Plan</h2>
-  <p class="hint">Konto pozwala: mieć dane na kilku telefonach (kopia w chmurze), dzielić <b>Plan</b> (terminy, zadania, zakupy) z drugą osobą i dostawać przypomnienia. <b>Pieniądze zostają prywatne</b> – druga osoba ich nie widzi.</p>
+  <p class="hint">Konto (opcjonalne) pozwala: mieć dane na kilku telefonach (kopia w chmurze), dzielić <b>Plan</b> (terminy, zadania, zakupy) z drugą osobą i dostawać przypomnienia. <b>Pieniądze zostają prywatne</b>. Bez konta aplikacja działa dalej tylko na tym telefonie.</p>
+  <p class="hint">🔒 Konto tylko z <b>kodem zaproszenia</b> – dostaniesz go od osoby, która ma już konto (Ustawienia → „➕ Zaproś”). Z takim kodem od razu macie wspólny Plan.</p>
   ${flash}
-  <div class="row"><input id="aName" type="text" maxlength="40" placeholder="Twoje imię"><button id="aReg" class="btn primary">Załóż konto</button></div>
+  <input id="aName" type="text" maxlength="40" placeholder="Twoje imię">
+  <div class="row"><input id="aInv" type="text" autocapitalize="characters" placeholder="Kod zaproszenia"><button id="aReg" class="btn primary">Załóż konto</button></div>
   <details class="acc-d"><summary>Mam już konto (inny telefon)</summary>
   <p class="hint">Na starym telefonie: Ustawienia → „📱 Dodaj moje drugie urządzenie” → wpisz kod tutaj.</p>
   <div class="row"><input id="aCode" type="text" autocapitalize="characters" placeholder="Kod, np. ABCDE-FGHJK"><button id="aRedeem" class="btn primary">Zaloguj</button></div>
   <p class="hint">Albo klucz odzyskiwania (zapisany przy zakładaniu konta):</p>
   <div class="row"><input id="aKey" type="text" autocapitalize="characters" placeholder="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX"><button id="aRecover" class="btn ghost">Odzyskaj</button></div></details>`;
     box.querySelector('#aReg').onclick=()=>run(async()=>{const name=box.querySelector('#aName').value.trim();if(!name)throw Object.assign(new Error(''),{code:'name'});
-      const r=await api('POST','/api/register',{name});setAcct(r);
+      const r=await api('POST','/api/register',{name,code:box.querySelector('#aInv').value});setAcct(r);box.querySelector('#aInv').value='';
       flash=`<div class="acc-key"><b>🔑 Twój klucz odzyskiwania</b><code>${esc(r.recovery)}</code><p>Zapisz go (zrzut ekranu / notatka). Pozwala wrócić do konta, gdy zgubisz telefon. Nikomu go nie podawaj. Pokazujemy go tylko raz.</p><button class="btn small ghost" id="aCopyKey">📋 Kopiuj</button></div>`;
       await refreshMe();await sync()});
     box.querySelector('#aRedeem').onclick=()=>run(async()=>{const r=await api('POST','/api/login/redeem',{code:box.querySelector('#aCode').value});setAcct(r);flash='';await refreshMe();await sync();toast('Zalogowano ✅')});
@@ -132,13 +140,14 @@ function _render(){
     return}
   const others=members.filter(m=>m.id!==acct.user.id);
   box.innerHTML=`<h2 class="sub">👤 Konto</h2>${flash}
-  <div class="acc-card"><div><b>${esc(acct.user.name)}</b><small id="syncInfo"></small></div><button id="aSync" class="btn small ghost">🔄</button></div>
+  <div class="acc-card"><div><b>${esc(acct.user.name)}</b>${acct.owner?' 👑':''}<small id="syncInfo"></small></div><button id="aSync" class="btn small ghost">🔄</button></div>
   <h2 class="sub">👫 Wspólny dom</h2>
   <p class="hint">${others.length?'Dzielisz Plan z: <b>'+others.map(m=>esc(m.name)).join(', ')+'</b>. Pieniądze każdy ma swoje (prywatne).':'Połącz się z partnerką/partnerem, żeby mieć wspólne terminy, zadania i zakupy. Pieniądze zostają prywatne.'}</p>
   <div id="invOut"></div>
   <button id="aInvite" class="btn big ghost">➕ Zaproś (pokaż kod)</button>
   <div class="row"><input id="aJoin" type="text" autocapitalize="characters" placeholder="Mam kod, np. ABCD-EFGH"><button id="aJoinBtn" class="btn primary">Dołącz</button></div>
   ${others.length?'<button id="aLeave" class="btn small ghost">Opuść wspólny dom</button>':''}
+  <label class="acc-share"><span><b>Pokaż moje pieniądze partnerowi</b><small>${acct.share?'✅ Włączone – osoby z Twojego domu widzą Twoje saldo, wpływy, wydatki i raporty (tylko podgląd, nie mogą nic zmienić).':'Wyłączone – Twoje pieniądze widzisz tylko Ty.'} Możesz to zmienić w każdej chwili.</small></span><input type="checkbox" id="aShare" ${acct.share?'checked':''}></label>
   <h2 class="sub">🔔 Przypomnienia</h2>
   <p class="hint">Powiadomienie przychodzi na telefony wszystkich w domu.${isIOS()?' iPhone: działa tylko w aplikacji dodanej do ekranu początkowego (iOS 16.4+).':''}</p>
   <div class="row"><button id="aPush" class="btn primary">${LS.getItem('pushOn')?'✅ Włączone (odśwież)':'Włącz powiadomienia'}</button><button id="aPushTest" class="btn ghost">Wyślij test</button></div>
@@ -149,21 +158,23 @@ function _render(){
   setSyncInfo();
   const q=s=>box.querySelector(s);
   q('#aSync').onclick=()=>{refreshMe();sync()};
-  q('#aInvite').onclick=()=>run(async()=>{const r=await api('POST','/api/household/invite');q('#invOut').innerHTML=`<div class="acc-key"><b>Kod dla drugiej osoby:</b><code>${esc(r.code)}</code><p>Druga osoba: zakłada konto w swojej aplikacji → Ustawienia → wpisuje ten kod w „Mam kod” → Dołącz. Kod działa raz, przez 15 minut.</p></div>`});
+  q('#aInvite').onclick=()=>run(async()=>{const r=await api('POST','/api/household/invite');q('#invOut').innerHTML=`<div class="acc-key"><b>Kod dla drugiej osoby:</b><code>${esc(r.code)}</code><p>Druga osoba w swojej aplikacji: Ustawienia → wpisuje imię i ten kod w „Kod zaproszenia” → <b>Załóż konto</b> (konto + wspólny dom w jednym kroku). Jeśli ma już konto: „Mam kod” → Dołącz. Kod działa raz, przez 15 minut.</p></div>`});
   q('#aJoinBtn').onclick=()=>run(async()=>{const code=q('#aJoin').value;if(!confirm('Dołączyć do domu tej osoby? Zobaczycie wspólny Plan. Pieniądze zostają prywatne.'))return;
     await api('POST','/api/household/join',{code});LS.removeItem('planSince');const m=J(PLAN_KEY,{});for(const id in m)if(!m[id].dirty)delete m[id];S(PLAN_KEY,m);await refreshMe();await sync();toast('Połączono 👫')});
   if(q('#aLeave'))q('#aLeave').onclick=()=>run(async()=>{if(!confirm('Opuścić wspólny dom? Wspólny Plan zostanie u drugiej osoby.'))return;await api('POST','/api/household/leave');LS.removeItem('planSince');S(PLAN_KEY,{});await refreshMe();await sync()});
+  q('#aShare').onchange=e=>run(async()=>{const on=e.target.checked;if(on&&!confirm('Pokazać Twoje pieniądze (saldo, wpływy, wydatki, raporty) osobom z Twojego domu? Będą mogły tylko oglądać.')){e.target.checked=false;return}
+    try{const r=await api('POST','/api/share',{on});acct.share=r.share;S('acct',acct);renderAcct();toast(r.share?'Udostępniono 👀':'Udostępnianie wyłączone')}catch(err){e.target.checked=!on;throw err}});
   q('#aPush').onclick=()=>run(async()=>{await enablePush();renderAcct();toast('Powiadomienia włączone 🔔')});
   q('#aPushTest').onclick=()=>run(async()=>{const r=await api('POST','/api/push/test');toast(r.sent.length?'Wysłano test 🔔':'Najpierw włącz powiadomienia')});
   q('#aCodeBtn').onclick=()=>run(async()=>{const r=await api('POST','/api/login/code');q('#codeOut').innerHTML=`<div class="acc-key"><b>Kod logowania:</b><code>${esc(r.code)}</code><p>Na drugim urządzeniu: Ustawienia → „Mam już konto” → wpisz kod. Działa raz, przez 10 minut. Nie podawaj go nikomu innemu.</p></div>`});
-  q('#aLogout').onclick=()=>run(async()=>{if(!confirm('Wylogować? Dane na tym telefonie zostaną.'))return;try{await api('POST','/api/logout')}catch(e){}acct=null;LS.removeItem('acct');resetSync();flash='';renderAcct()});
+  q('#aLogout').onclick=()=>run(async()=>{if(!confirm('Wylogować? Dane na tym telefonie zostaną.'))return;try{await api('POST','/api/logout')}catch(e){}dropAcct()});
   q('#aDel').onclick=()=>run(async()=>{if(!confirm('Usunąć konto i WSZYSTKIE Twoje dane z serwera (kopia w chmurze, przypomnienia)? Dane na tym telefonie zostaną.'))return;if(!confirm('Na pewno? Tego nie da się cofnąć.'))return;
-    await api('DELETE','/api/account');acct=null;LS.removeItem('acct');resetSync();flash='';renderAcct();toast('Konto usunięte')});
+    await api('DELETE','/api/account');dropAcct();toast('Konto usunięte')});
 }
 box.addEventListener('click',async e=>{if(e.target.id==='aCopyKey'){const c=box.querySelector('.acc-key code');try{await navigator.clipboard.writeText(c.textContent);toast('Skopiowano')}catch(err){}}});
 async function run(fn){try{await fn()}catch(e){alert(!e.code&&e.message?e.message:errMsg(e))}}
 
-renderAcct();
+window.WY={api,sync,plan,aiParse,aiMoney,partnerMoney,refreshMe,token:()=>acct&&acct.token,loggedIn:()=>!!acct,me:()=>acct&&acct.user,members:()=>members,errMsg};
+renderAcct();who();
 if(acct){setTimeout(()=>{refreshMe();sync()},800)}
-window.WY={api,sync,plan,aiParse,aiMoney,loggedIn:()=>!!acct,me:()=>acct&&acct.user,members:()=>members,errMsg};
 })();
