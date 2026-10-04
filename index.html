@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net 'wasm-unsafe-eval'; worker-src 'self' blob: https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://wydatki-receipt.tazo88.workers.dev https://cdn.jsdelivr.net https://tessdata.projectnaptha.com data: blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="theme-color" content="#16a34a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Wydatki">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<title>Wydatki</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="style.css?v=8">
+</head>
+<body>
+<header><h1>Wydatki</h1><span id="hdrTotal"></span></header>
+
+<main>
+<!-- DODAJ -->
+<section id="tab-add" class="tab active">
+  <div class="seg who" hidden></div>
+  <div class="bal" id="balCard">
+    <div class="bal-t">💰 Moje pieniądze — zostało</div>
+    <div class="bal-v" id="balMain">0,00 zł</div>
+    <div class="bal-x" id="balEur"></div>
+    <div class="bal-m"><div><small>Wpływy (<span class="mName"></span>)</small><b class="pos" id="mInc">0,00 zł</b></div><div><small>Wydatki (<span class="mName"></span>)</small><b class="neg" id="mExp">0,00 zł</b></div></div>
+  </div>
+  <div class="row modes">
+    <button type="button" id="modeInc" class="btn big inc">+ Wpływ</button>
+    <button type="button" id="modeExp" class="btn big exp on">− Wydatek</button>
+  </div>
+  <form id="form" autocomplete="off">
+    <div class="form-t" id="formTitle">Nowy wydatek</div>
+    <div class="row amount-row">
+      <input id="amount" type="text" inputmode="decimal" placeholder="0,00" aria-label="Kwota" required>
+      <select id="currency" aria-label="Waluta"><option>PLN</option><option>EUR</option></select>
+    </div>
+    <div class="row quick">
+      <button type="button" id="micBtn" class="btn big ghost">🎤 Powiedz</button>
+      <label class="btn big ghost" for="photo" id="photoBtn">📷 Paragon</label>
+      <input id="photo" type="file" accept="image/*" capture="environment" hidden>
+    </div>
+    <p id="voiceInfo" class="hint"></p>
+    <p id="status" class="status" hidden></p>
+    <div id="photoPrev" hidden><img id="thumb" alt="paragon"><button type="button" id="rmPhoto" class="btn small ghost">Usuń zdjęcie</button></div>
+
+    <label class="lbl" id="catLbl">Kategoria</label>
+    <div id="cats" class="cats"></div>
+
+    <label class="lbl" for="note" id="noteLbl">Notatka / sklep (opcjonalnie)</label>
+    <input id="note" type="text" placeholder="np. Biedronka">
+
+    <label class="lbl" for="date">Data</label>
+    <input id="date" type="date" required>
+
+    <button type="submit" id="saveBtn" class="btn big primary">Zapisz wydatek</button>
+    <button type="button" id="cancelEdit" class="btn big ghost" hidden>Anuluj edycję</button>
+    <button type="button" id="delBtn" class="btn big danger" hidden>Usuń wydatek</button>
+  </form>
+  <h2 class="sub">Ostatnie</h2>
+  <ul id="recent" class="list"></ul>
+</section>
+
+<!-- RAPORTY -->
+<section id="tab-rep" class="tab">
+  <div class="seg who" hidden></div>
+  <div class="seg" id="periodSeg">
+    <button data-p="d">Dzień</button><button data-p="w">Tydzień</button><button data-p="m" class="on">Miesiąc</button>
+  </div>
+  <div class="nav">
+    <button id="prev" class="btn ghost">‹</button>
+    <strong id="periodLabel"></strong>
+    <button id="next" class="btn ghost">›</button>
+  </div>
+  <div id="repSum"></div>
+  <div class="row">
+    <button id="csvBtn" class="btn ghost">⬇️ CSV (Excel)</button>
+    <button id="shareBtn" class="btn ghost">📤 Udostępnij</button>
+  </div>
+  <ul id="repList" class="list"></ul>
+</section>
+
+<!-- PLAN (wspólny) -->
+<section id="tab-plan" class="tab"></section>
+
+<!-- USTAWIENIA -->
+<section id="tab-set" class="tab">
+  <h2 class="sub">Stan początkowy</h2>
+  <p class="hint">Ile masz teraz pieniędzy (np. na koncie + gotówka)? Saldo = stan początkowy + wpływy − wydatki.</p>
+  <div class="row"><input id="startPLN" type="text" inputmode="decimal" placeholder="0,00 zł"><input id="startEUR" type="text" inputmode="decimal" placeholder="0,00 €"></div>
+  <button id="saveStart" class="btn big primary">Zapisz stan początkowy</button>
+  <h2 class="sub">Domyślna waluta</h2>
+  <p class="hint">Nowe wpisy startują w tej walucie (zmienia się też sama na ostatnio użytą).</p>
+  <select id="defCur"><option>PLN</option><option>EUR</option></select>
+  <h2 class="sub">Kategorie wydatków</h2>
+  <div class="row"><input id="newCat" type="text" placeholder="Nowa kategoria"><button id="addCat" class="btn primary">Dodaj</button></div>
+  <ul id="catList" class="list"></ul>
+  <h2 class="sub">Źródła wpływów</h2>
+  <div class="row"><input id="newInc" type="text" placeholder="Nowe źródło"><button id="addInc" class="btn primary">Dodaj</button></div>
+  <ul id="incList" class="list"></ul>
+  <h2 class="sub">Kopia zapasowa</h2>
+  <p class="hint">Bez konta dane są tylko na tym telefonie. Rób czasem kopię i zachowaj plik (np. w chmurze / mailu). Z kontem są też w chmurze.</p>
+  <button id="backupBtn" class="btn big ghost">💾 Zapisz kopię (JSON)</button>
+  <label class="btn big ghost" for="restore">📂 Wczytaj kopię</label>
+  <input id="restore" type="file" accept="application/json,.json" hidden>
+  <button id="csvAll" class="btn big ghost">⬇️ Wszystko do CSV</button>
+  <h2 class="sub">Usuń dane</h2>
+  <button id="wipeBtn" class="btn big danger">🗑️ Usuń wszystkie dane z telefonu</button>
+  <h2 class="sub">Instalacja</h2>
+  <p class="hint">iPhone (Safari): Udostępnij ⬆️ → „Do ekranu początkowego”. Android (Chrome): menu ⋮ → „Dodaj do ekranu głównego” / „Zainstaluj aplikację”.</p>
+  <p class="hint">Wskazówka: na iPhonie możesz też dyktować z klawiatury (ikona 🎤 na klawiaturze) w polach kwoty i notatki.</p>
+</section>
+</main>
+
+<nav class="tabs">
+  <button data-t="add" class="on">➕<span>Dodaj</span></button>
+  <button data-t="rep">📊<span>Raporty</span></button>
+  <button data-t="plan">📅<span>Plan</span></button>
+  <button data-t="set">⚙️<span>Ustawienia</span></button>
+</nav>
+<div id="toast" hidden></div>
+<script src="app.js?v=8"></script>
+<script src="receipt.js?v=8"></script>
+<script src="sync.js?v=8"></script>
+<script src="plan.js?v=8"></script>
+<script src="help.js?v=8"></script>
+</body>
+</html>
