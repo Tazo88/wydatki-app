@@ -1,6 +1,6 @@
 // Testy bezpieczeństwa API (10 punktów) – dwóch testowych użytkowników.
 // BASE=http://127.0.0.1:8811 SQL="cmd" node tests/api.mjs   (lokalnie, SQL = polecenie wykonujące zapytanie w D1)
-// BASE=https://wydatki-receipt.tazo88.workers.dev node tests/api.mjs   (live; testy wymagające SQL są pomijane)
+// BASE=https://wydatki-receipt.tazo88.workers.dev SIGNUP_CODES=kod1,kod2 node tests/api.mjs   (live; 2 testowe kody startowe wstawione wcześniej do D1; testy wymagające SQL są pomijane)
 import { execSync } from 'node:child_process';
 import http from 'node:http';
 import crypto from 'node:crypto';
@@ -26,12 +26,55 @@ const rid = () => 't' + crypto.randomBytes(6).toString('hex');
 await req('GET', '/api/push/key');
 if (LOCAL) sql('DELETE FROM rate');
 
-// ---------- start: dwóch użytkowników ----------
-const regA = await req('POST', '/api/register', { body: { name: 'TestA <img src=x onerror=alert(1)>' } });
-const regB = await req('POST', '/api/register', { body: { name: "TestB'); DROP TABLE users;--" } });
+// ---------- start: dwóch użytkowników (rejestracja tylko z kodem) ----------
+const A16 = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ', mk16 = () => [...crypto.randomBytes(16)].map(x => A16[x & 31]).join('');
+const fmt16 = c => c.match(/.{4}/g).join('-');
+let SC = (process.env.SIGNUP_CODES || '').split(',').filter(Boolean);
+const addCode = (c, role = 'test', exp = Date.now() + 3600e3) => sql(`INSERT INTO signup_codes(hash,role,expires,created) VALUES('${sha('su:' + c.replace(/-/g, ''))}','${role}',${exp},${Date.now()})`);
+if (LOCAL) { SC = [mk16(), mk16()]; SC.forEach(c => addCode(c)); }
+const regA = await req('POST', '/api/register', { body: { name: 'TestA <img src=x onerror=alert(1)>', code: fmt16(SC[0]) } });
+const regB = await req('POST', '/api/register', { body: { name: "TestB'); DROP TABLE users;--", code: SC[1].toLowerCase() } });
 ok('setup', 'rejestracja A i B', regA.s === 200 && regB.s === 200 && regA.j.token && regB.j.token, regA.t + regB.t);
 const A = regA.j.token, B = regB.j.token, Aid = regA.j.user.id, Bid = regB.j.user.id;
 const users = [[A, 'A'], [B, 'B']];
+
+// ---------- 12. tylko z zaproszeniem ----------
+const n1 = await req('POST', '/api/register', { body: { name: 'Bez kodu' } });
+const n2 = await req('POST', '/api/register', { body: { name: 'Zły kod', code: '<script>' } });
+ok('12 Zaproszenia', 'rejestracja bez kodu → 403, ze śmieciowym kodem → 400', n1.s === 403 && n1.j?.error === 'invite_required' && n2.s === 400, n1.t + n2.t);
+const reuse = await req('POST', '/api/register', { body: { name: 'Drugi raz', code: SC[0] } });
+ok('12 Zaproszenia', 'kod startowy jednorazowy (drugi raz → 400)', reuse.s === 400 && reuse.j?.error === 'bad_code', reuse.t);
+const g1 = await req('POST', '/api/register', { body: { name: 'Zgadywacz', code: fmt16(mk16()) } });
+const g2 = await req('POST', '/api/register', { body: { name: 'Zgadywacz', code: 'ABCD-EFGH' } });
+ok('12 Zaproszenia', 'zgadnięty kod (16 i 8 znaków) → 400', g1.s === 400 && g2.s === 400, g1.s + ',' + g2.s);
+if (LOCAL) {
+  const ex = mk16(); addCode(ex, 'test', 1);
+  ok('12 Zaproszenia', 'wygasły kod → 400', (await req('POST', '/api/register', { body: { name: 'Stary', code: ex } })).s === 400);
+  const rows = sql('SELECT hash FROM signup_codes');
+  ok('12 Zaproszenia', 'kody startowe zapisane tylko jako hash', rows.every(r => /^[0-9a-f]{64}$/.test(r.hash)) && !JSON.stringify(rows).includes(SC[0]));
+} else skipT('12 Zaproszenia', 'wygasły kod / hash w bazie', 'wymaga SQL (sprawdzone lokalnie)');
+const invC = await req('POST', '/api/household/invite', { token: A });
+const regC = await req('POST', '/api/register', { body: { name: 'TestC', code: invC.j.code } });
+const meC = regC.j?.token ? await req('GET', '/api/me', { token: regC.j.token }) : null;
+ok('12 Zaproszenia', 'kod zaproszenia do domu = zaproszenie do aplikacji (konto + wspólny dom w 1 kroku)', regC.s === 200 && meC?.j.household.members.some(m => m.id === Aid) && meC.j.household.members.length === 2 && meC.j.owner === false, regC.t);
+ok('12 Zaproszenia', 'nowa osoba nie widzi pieniędzy zapraszającego', meC && !(await req('POST', '/api/sync', { token: regC.j.token, body: { since: '0:' } })).t.includes('SEKRET'));
+ok('12 Zaproszenia', 'kod domu też jednorazowy', (await req('POST', '/api/register', { body: { name: 'TestD', code: invC.j.code } })).s === 400);
+if (regC.j?.token) await req('DELETE', '/api/account', { token: regC.j.token });
+if (LOCAL) {
+  sql("DELETE FROM rate WHERE k LIKE 'reg:%'"); sql("DELETE FROM config WHERE k='owner'"); const oc = mk16(); addCode(oc, 'owner', Date.now() + 7 * 864e5);
+  const ro = await req('POST', '/api/register', { body: { name: 'Właściciel', code: oc } });
+  const mo = await req('GET', '/api/me', { token: ro.j.token }), ma = await req('GET', '/api/me', { token: A });
+  ok('12 Zaproszenia', 'kod właściciela: pierwsze konto = właściciel (inni nie)', mo.j.owner === true && ma.j.owner === false && sql("SELECT v FROM config WHERE k='owner'")[0]?.v === ro.j.user.id);
+  await req('DELETE', '/api/account', { token: ro.j.token });
+  ok('12 Zaproszenia', 'usunięcie konta właściciela czyści rolę', sql("SELECT v FROM config WHERE k='owner'").length === 0);
+}
+const bf = []; for (let i = 0; i < 11; i++) bf.push((await req('POST', '/api/register', { body: { name: 'Brute', code: [...crypto.randomBytes(8)].map(x => A16[x & 31]).join('') } })).s);
+const b429 = bf.indexOf(429);
+ok('12 Zaproszenia', 'zgadywanie kodów przy rejestracji blokowane (max 10 prób/h z IP → 429)', b429 >= 0 && bf.slice(0, b429).every(s => s === 400) && bf.slice(b429).every(s => s === 429), bf.join(','));
+// AI tylko z kontem
+const ai0 = [await req('POST', '/', { body: { images: [] } }), await req('POST', '/', { token: crypto.randomBytes(32).toString('base64url'), body: { images: [] } }),
+  await req('POST', '/api/parse', { body: { text: 'kup mleko' } }), await req('POST', '/api/where', { body: { q: 'mleko' } })];
+ok('12 Zaproszenia', 'AI (paragon, parsowanie, „Gdzie kupić?”) bez konta / z podrobionym tokenem → 401', ai0.every(r => r.s === 401), ai0.map(r => r.s).join(','));
 
 // ---------- 1. IDOR ----------
 const eid = rid();
@@ -74,11 +117,45 @@ await req('POST', '/api/sync', { token: B, body: { plan: [{ id: pid, kind: 'task
 sa = await req('POST', '/api/sync', { token: A, body: { planSince: '0:' } });
 ok('2 Dom', 'członek może odhaczyć wspólne zadanie', sa.j.plan.find(p => p.id === pid)?.done === true);
 ok('3 Parowanie', 'kod jednorazowy (drugi raz nie działa)', (await req('POST', '/api/household/join', { token: A, body: { code: inv2.j.code } })).s === 400);
+// ---------- 11. udostępnianie pieniędzy (opcjonalne, tylko podgląd) ----------
+const pm = (t, owner) => req('POST', '/api/partner/money', { token: t, body: { owner, since: '0:' } });
+await req('POST', '/api/sync', { token: A, body: { entries: [{ id: rid(), updated: 1100, data: { amount: 5, note: '<img src=x onerror=alert(1)>', type: 'exp', date: '2026-10-04', currency: 'PLN', category: 'Inne' } }] } });
+const p0 = await pm(B, Aid), meA0 = await req('GET', '/api/me', { token: A }), meB0 = await req('GET', '/api/me', { token: B });
+ok('11 Udostępnianie', 'domyślnie WYŁ.: B (w tym samym domu) nie widzi pieniędzy A → 403', p0.s === 403 && !p0.t.includes('SEKRET-A') && meA0.j.share === false && meB0.j.household.members.find(m => m.id === Aid)?.shares === false, p0.t);
+const on1 = await req('POST', '/api/share', { token: A, body: { on: true } });
+const p1 = await pm(B, Aid), meB1 = await req('GET', '/api/me', { token: B });
+ok('11 Udostępnianie', 'po włączeniu przez A: B widzi wpisy i stan początkowy A', on1.s === 200 && on1.j.share === true && p1.s === 200 && p1.t.includes('SEKRET-A') && p1.j.start?.PLN === 999 && meB1.j.household.members.find(m => m.id === Aid)?.shares === true, p1.t.slice(0, 200));
+ok('11 Udostępnianie', 'notatka A z <img onerror> zwracana jako tekst JSON (escapowanie w kliencie – e2e)', p1.h.get('content-type').startsWith('application/json') && p1.t.includes('<img src=x onerror'));
+ok('11 Udostępnianie', 'to zgoda jednostronna: A nie widzi pieniędzy B', (await pm(A, Bid)).s === 403);
+const w11 = [];
+w11.push((await req('POST', '/api/sync', { token: B, body: { owner: Aid, user_id: Aid, entries: [{ id: eid, updated: 9e12, data: { note: 'B-ZMIENIA' } }, { id: eid, updated: 9e12, deleted: true }], kv: [{ k: 'start', v: { PLN: 1 }, updated: 9e12 }] } })).s);
+for (const m of ['PUT', 'DELETE', 'PATCH']) w11.push((await req(m, '/api/partner/money', { token: B, body: { owner: Aid } })).s);
+w11.push((await req('POST', '/api/partner/money', { token: B, body: { owner: Aid, entries: [{ id: eid, updated: 9e12, deleted: true }] } })).s);
+const pa11 = await req('POST', '/api/sync', { token: A, body: { since: '0:' } });
+ok('11 Udostępnianie', 'B nigdy nie zmieni ani nie usunie danych A (nawet przy włączonym podglądzie)', pa11.j.entries.find(e => e.id === eid)?.data?.note === 'SEKRET-A' && !pa11.j.entries.find(e => e.id === eid).deleted && pa11.j.kv.find(k => k.k === 'start')?.v?.PLN === 999, w11.join(','));
+const ft = [];
+ft.push((await req('POST', '/api/partner/money', { body: { owner: Aid } })).s);
+ft.push((await req('POST', '/api/partner/money', { token: crypto.randomBytes(32).toString('base64url'), body: { owner: Aid } })).s);
+ft.push((await req('POST', '/api/partner/money', { token: B.slice(0, -1) + (B.endsWith('A') ? 'B' : 'A'), body: { owner: Aid } })).s);
+ft.push((await req('POST', '/api/partner/money', { token: 'eyJhbGciOiJub25lIn0.eyJzdWIiOiJ1In0.', body: { owner: Aid } })).s);
+ft.push((await req('POST', '/api/share', { token: crypto.randomBytes(32).toString('base64url'), body: { on: true } })).s);
+ok('11 Udostępnianie', 'brak/podrobiony token → 401 (podgląd i przełącznik)', ft.every(s => s === 401), ft.join(','));
+const odd = [await pm(B, "u_' OR 1=1 --"), await pm(B, Bid), await pm(B, ''), await pm(B, 'u_' + '0'.repeat(24))];
+ok('11 Udostępnianie', 'zły/nieistniejący/własny identyfikator → 403', odd.every(r => r.s === 403), odd.map(r => r.s).join(','));
+const off1 = await req('POST', '/api/share', { token: A, body: { on: false } });
+const p2 = await pm(B, Aid);
+ok('11 Udostępnianie', 'wyłączenie działa natychmiast (następny odczyt → 403)', off1.s === 200 && off1.j.share === false && p2.s === 403 && !p2.t.includes('SEKRET-A'));
+await req('POST', '/api/share', { token: A, body: { on: true } });
+await req('POST', '/api/share', { token: B, body: { on: true } });
+ok('11 Udostępnianie', 'ponowne włączenie + B też udostępnia → oboje widzą', (await pm(B, Aid)).s === 200 && (await pm(A, Bid)).s === 200);
 // wyjście z domu
 const lv = await req('POST', '/api/household/leave', { token: B });
 await req('POST', '/api/sync', { token: A, body: { plan: [{ id: rid(), kind: 'event', title: 'PO-WYJSCIU-B', due: '2026-12-01T10:00', updated: 4000 }] } });
 sb = await req('POST', '/api/sync', { token: B, body: { planSince: '0:' } });
 ok('2 Dom', 'po wyjściu B nie widzi nowych rzeczy domu A', lv.s === 200 && !sb.t.includes('PO-WYJSCIU-B'));
+const meBl = await req('GET', '/api/me', { token: B }), pBl = await pm(B, Aid), pAl = await pm(A, Bid);
+ok('11 Udostępnianie', 'nie-członek nigdy: po wyjściu B nie widzi pieniędzy A, choć A nadal udostępnia', pBl.s === 403 && !pBl.t.includes('SEKRET-A'));
+ok('11 Udostępnianie', 'wyjście z domu wyłącza udostępnianie B (flaga WYŁ., A nie widzi B)', pAl.s === 403 && meBl.j.share === false);
 // wygasły kod
 if (LOCAL) { const i3 = await req('POST', '/api/household/invite', { token: A }); sql('UPDATE invites SET expires=1'); ok('3 Parowanie', 'wygasły kod odrzucony', (await req('POST', '/api/household/join', { token: B, body: { code: i3.j.code } })).s === 400); }
 else skipT('3 Parowanie', 'wygasły kod', 'wymaga SQL (sprawdzone lokalnie)');
@@ -146,8 +223,8 @@ s6 = await burst(16, () => req('POST', '/api/parse', { token: A, body: { text: '
 ok('6 Limity', 'Gemini /parse: 429 po 15/min', s6.indexOf(429) === 15, s6.join(','));
 s6 = await burst(7, () => req('POST', '/api/where', { token: A, body: { q: '' } }));
 ok('6 Limity', 'Gemini /where: 429 po 6/min', s6.indexOf(429) === 6, s6.join(','));
-s6 = await burst(7, () => req('POST', '/', { body: { images: [] } }));
-ok('6 Limity', 'Gemini paragon: 429 po 6/min (globalnie, D1)', s6.indexOf(429) === 6, s6.join(','));
+s6 = await burst(7, () => req('POST', '/', { token: A, body: { images: [] } }));
+ok('6 Limity', 'Gemini paragon (z kontem): 429 po 6/min na osobę', s6.indexOf(429) === 6 && s6.slice(0, 6).every(s => s === 400), s6.join(','));
 if (LOCAL) {
   sql("DELETE FROM rate WHERE k LIKE 'rec:%' OR k LIKE 'fail:%'");
   const v6 = await burst(11, i => req('POST', '/api/login/recover', { body: { key: 'x' }, headers: { 'CF-Connecting-IP': '2001:db8:1:2:' + (i + 1).toString(16) + '::' + i } }));
@@ -156,10 +233,7 @@ if (LOCAL) {
   ok('6 Limity', 'globalny bezpiecznik: >100 nieudanych logowań/h z wielu IP → 429 dla wszystkich', many.slice(0, 90).every(s => s === 401) && many.slice(-3).every(s => s === 429), many.slice(95).join(','));
   sql("DELETE FROM rate WHERE k LIKE 'rec:%' OR k LIKE 'fail:%'");
 }
-const extra = [];
-s6 = await burst(4, async () => { const r = await req('POST', '/api/register', { body: { name: 'TestX' } }); if (r.j?.token) extra.push(r.j.token); return r; });
-ok('6 Limity', 'rejestracja: 429 po 5/h z jednego IP', s6[3] === 429 && s6.slice(0, 3).every(s => s === 200), s6.join(','));
-for (const t of extra) await req('DELETE', '/api/account', { token: t });
+ok('6 Limity', 'rejestracja: max 10 prób/h z jednego IP (sprawdzone w sekcji 12)', b429 >= 0);
 s6 = await burst(11, () => req('POST', '/api/login/code', { token: B }));
 ok('6 Limity', 'tworzenie kodów logowania: 429 po 10/h', s6.indexOf(429) === 10, s6.join(','));
 
@@ -256,12 +330,14 @@ if (process.env.GEMINI_LIVE !== '0') {
 }
 
 // ---------- 10. usunięcie konta ----------
+if (LOCAL) ok('11 Udostępnianie', '(znów razem) B widzi pieniądze A przed usunięciem konta', (await pm(B, Aid)).s === 200);
 for (const [t, n] of users) {
   const d = await req('DELETE', '/api/account', { token: t });
   ok('10 Konto', `usunięcie konta ${n}: token przestaje działać`, d.s === 200 && (await req('GET', '/api/me', { token: t })).s === 401);
+  if (LOCAL && n === 'A') ok('11 Udostępnianie', 'usunięcie konta A od razu wyłącza podgląd u B', (await pm(B, Aid)).s === 403);
 }
 if (LOCAL) {
-  const left = sql(`SELECT (SELECT COUNT(*) FROM users WHERE id IN ('${Aid}','${Bid}')) u, (SELECT COUNT(*) FROM entries WHERE user_id IN ('${Aid}','${Bid}')) e, (SELECT COUNT(*) FROM user_kv WHERE user_id IN ('${Aid}','${Bid}')) k, (SELECT COUNT(*) FROM sessions WHERE user_id IN ('${Aid}','${Bid}')) s, (SELECT COUNT(*) FROM push_subs WHERE user_id IN ('${Aid}','${Bid}')) p, (SELECT COUNT(*) FROM members WHERE user_id IN ('${Aid}','${Bid}')) m, (SELECT COUNT(*) FROM login_codes WHERE user_id IN ('${Aid}','${Bid}')) c`)[0];
+  const left = sql(`SELECT (SELECT COUNT(*) FROM users WHERE id IN ('${Aid}','${Bid}')) u, (SELECT COUNT(*) FROM entries WHERE user_id IN ('${Aid}','${Bid}')) e, (SELECT COUNT(*) FROM user_kv WHERE user_id IN ('${Aid}','${Bid}')) k, (SELECT COUNT(*) FROM sessions WHERE user_id IN ('${Aid}','${Bid}')) s, (SELECT COUNT(*) FROM push_subs WHERE user_id IN ('${Aid}','${Bid}')) p, (SELECT COUNT(*) FROM members WHERE user_id IN ('${Aid}','${Bid}')) m, (SELECT COUNT(*) FROM login_codes WHERE user_id IN ('${Aid}','${Bid}')) c, (SELECT COUNT(*) FROM shares WHERE owner_id IN ('${Aid}','${Bid}')) sh`)[0];
   ok('10 Konto', 'po usunięciu: 0 wierszy użytkowników w bazie', Object.values(left).every(v => v === 0), JSON.stringify(left));
 }
 console.log(`\n${pass}/${pass + failN} PASS${skip ? `, ${skip} pominięte (live)` : ''}`);
