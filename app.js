@@ -7,7 +7,7 @@ const ymd=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
 const parseYmd=s=>{const[a,b,c]=s.split('-').map(Number);return new Date(a,b-1,c)};
 const fmtNum=n=>(n<-0.004?'−':'')+(Math.round(Math.abs(n)*100)/100).toFixed(2).replace('.',',').replace(/\B(?=(\d{3})+(?!\d))/g,' ');
 const SYM={PLN:'zł',EUR:'€'};
-const fmt=(n,c='PLN')=>fmtNum(n)+' '+SYM[c];
+const fmt=(n,c='PLN')=>fmtNum(n)+' '+(SYM[c]||'');
 const parseAmt=s=>{s=String(s||'').replace(/\s/g,'').replace(',','.').replace(/[^\d.]/g,'');const v=parseFloat(s);return isFinite(v)?v:NaN};
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function toast(m){const t=$('#toast');t.textContent=m;t.hidden=false;clearTimeout(toast.h);toast.h=setTimeout(()=>t.hidden=true,2200)}
@@ -17,8 +17,9 @@ function status(m){const s=$('#status');if(!m){s.hidden=true;return}s.textConten
 let dbp;
 function db(){return dbp||(dbp=new Promise((res,rej)=>{const r=indexedDB.open('wydatki',1);r.onupgradeneeded=()=>r.result.createObjectStore('exp',{keyPath:'id'});r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)}))}
 async function tx(mode,fn){const d=await db();return new Promise((res,rej)=>{const t=d.transaction('exp',mode);const st=t.objectStore('exp');const out=fn(st);t.oncomplete=()=>res(out&&out.result!==undefined?out.result:out);t.onerror=()=>rej(t.error)})}
-const putExp=e=>tx('readwrite',s=>s.put(e));
-const delExp=id=>tx('readwrite',s=>s.delete(id));
+// zmiany lokalne: znacznik czasu + zdarzenie (synchronizacja w sync.js)
+const putExp=(e,fromSync)=>{if(!fromSync)e.updated=Date.now();return tx('readwrite',s=>s.put(e)).then(r=>{if(!fromSync)dispatchEvent(new Event('wy-change'));return r})};
+const delExp=(id,fromSync)=>tx('readwrite',s=>s.delete(id)).then(r=>{if(!fromSync){const t=JSON.parse(localStorage.getItem('tomb')||'{}');t[id]=Date.now();localStorage.setItem('tomb',JSON.stringify(t));dispatchEvent(new Event('wy-change'))}return r});
 const allExp=()=>tx('readonly',s=>s.getAll());
 
 // ---------- state ----------
@@ -61,7 +62,8 @@ $('#form').onsubmit=async e=>{
 };
 function editExpense(id){const x=expenses.find(e=>e.id===id);if(!x)return;showTab('add');editId=id;$('#amount').value=String(x.amount).replace('.',',');$('#currency').value=x.currency;const inc=isInc(x);const list=inc?incCats:cats;if(inc)selInc=x.category;else selCat=x.category;if(!list.includes(x.category)){list.push(x.category);saveCats()}$('#note').value=x.note||'';$('#date').value=x.date;photoData=x.photo||null;showPhoto();$('#saveBtn').textContent='Zapisz zmiany';setMode(inc?'inc':'exp');$('#cancelEdit').hidden=false;$('#delBtn').hidden=false}
 
-function li(x){const inc=isInc(x);return `<li data-id="${x.id}" class="${inc?'inc':'exp'}">${x.photo?`<img src="${x.photo}" alt="">`:''}<div class="i"><b>${esc(x.category)}</b><small>${esc(x.date.split('-').reverse().join('.'))}${x.note?' · '+esc(x.note):''}</small></div><span class="a ${inc?'pos':'neg'}">${inc?'+':'−'}${fmt(x.amount,x.currency)}</span></li>`}
+const safePhoto=p=>typeof p==='string'&&/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(p)?p:null;
+function li(x){const inc=isInc(x);const ph=safePhoto(x.photo);return `<li data-id="${esc(x.id)}" class="${inc?'inc':'exp'}">${ph?`<img src="${ph}" alt="">`:''}<div class="i"><b>${esc(x.category)}</b><small>${esc(x.date.split('-').reverse().join('.'))}${x.note?' · '+esc(x.note):''}</small></div><span class="a ${inc?'pos':'neg'}">${inc?'+':'−'}${fmt(x.amount,x.currency)}</span></li>`}
 function bindList(el){el.querySelectorAll('li[data-id]').forEach(l=>l.onclick=()=>editExpense(l.dataset.id))}
 const sortExp=a=>a.sort((p,q)=>q.date.localeCompare(p.date)||q.created-p.created);
 
@@ -199,7 +201,7 @@ function renderReport(){const p=periodData();$('#periodLabel').textContent=p.lab
   <div class="rs"><h3><span>💚 Wpływy</span><span class="pos">+${totStr(p.inc.tot)}</span></h3>${bars(p.inc.cats,p.inc.tot,'g')}</div>
   <div class="rs"><h3><span>💸 Wydatki</span><span class="neg">−${totStr(p.tot)}</span></h3>${bars(p.cats,p.tot,'r')}</div>`;
   const l=$('#repList');l.innerHTML=p.list.map(li).join('')||'<li class="empty">Brak wpisów w tym okresie</li>';bindList(l)}
-function csv(list){const q=s=>{s=String(s??'');return /[;"\n\r]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s};
+function csv(list){const q=s=>{s=String(s??'');if(/^[=+\-@\t\r]/.test(s)&&!/^-?\d+(,\d+)?$/.test(s))s="'"+s;return /[;"\n\r]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s};
   const rows=[['Data','Typ','Kwota','Waluta','Kategoria','Notatka']].concat(sortExp(list.slice()).reverse().map(x=>[x.date,isInc(x)?'Wpływ':'Wydatek',x.amount.toFixed(2).replace('.',','),x.currency,x.category,x.note||'']));
   return '\uFEFF'+rows.map(r=>r.map(q).join(';')).join('\r\n')+'\r\n'}
 function download(name,content,type){const b=new Blob([content],{type});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1500)}
@@ -219,13 +221,21 @@ function renderCatList(){renderIncList();const l=$('#catList');l.innerHTML=cats.
   l.querySelectorAll('button[data-i]').forEach(b=>b.onclick=()=>{const c=cats[b.dataset.i];if(confirm('Usunąć kategorię „'+c+'”? (wydatki zostaną)')){cats.splice(b.dataset.i,1);saveCats();if(selCat===c)selCat='Inne';renderCatList();renderCats()}})}
 $('#addCat').onclick=()=>{const v=$('#newCat').value.trim();if(!v)return;if(!cats.some(c=>c.toLowerCase()===v.toLowerCase())){cats.splice(cats.length-1,0,v);saveCats()}$('#newCat').value='';renderCatList();renderCats();toast('Dodano kategorię')};
 $('#backupBtn').onclick=()=>download('wydatki_kopia_'+ymd(new Date())+'.json',JSON.stringify({app:'wydatki',v:2,exported:new Date().toISOString(),cats,incCats,start:getStart(),expenses:expenses.filter(x=>!isInc(x)),incomes:expenses.filter(isInc)}),'application/json');
+// walidacja wpisów z pliku kopii (niezaufane dane)
+function clean(x,type){if(!x||typeof x!=='object')return null;const a=+x.amount;
+  if(!(typeof x.id==='string'&&/^[\w-]{1,64}$/.test(x.id))||!/^\d{4}-\d{2}-\d{2}$/.test(x.date||'')||!isFinite(a))return null;
+  const str=(v,n)=>typeof v==='string'?v.slice(0,n):'';
+  return{id:x.id,type,amount:Math.round(a*100)/100,currency:x.currency==='EUR'?'EUR':'PLN',category:str(x.category,40)||'Inne',note:str(x.note,300),date:x.date,photo:safePhoto(x.photo),receipt:typeof x.receipt==='string'&&/^[\w-]{1,64}$/.test(x.receipt)?x.receipt:undefined,created:+x.created||Date.now()}}
+$('#wipeBtn').onclick=async()=>{if(!confirm('Usunąć WSZYSTKIE dane z tego telefonu? Tego nie da się cofnąć. (Najpierw zrób kopię.)'))return;if(!confirm('Na pewno? Wszystkie wpływy, wydatki i ustawienia zostaną usunięte.'))return;
+  await tx('readwrite',s=>s.clear());localStorage.clear();if(window.caches)for(const k of await caches.keys())await caches.delete(k);toast('Usunięto wszystkie dane');setTimeout(()=>location.reload(),600)};
 $('#restore').onchange=async e=>{const f=e.target.files[0];e.target.value='';if(!f)return;
   try{const d=JSON.parse(await f.text());if(!Array.isArray(d.expenses))throw new Error('zły plik');
     const inc=Array.isArray(d.incomes)?d.incomes:[];let n=0;
-    for(const x of d.expenses)if(x&&x.id&&x.date&&isFinite(x.amount)){await putExp(x);n++}
-    for(const x of inc)if(x&&x.id&&x.date&&isFinite(x.amount)){x.type='inc';await putExp(x);n++}
-    (d.cats||[]).forEach(c=>{if(!cats.includes(c))cats.push(c)});(d.incCats||[]).forEach(c=>{if(!incCats.includes(c))incCats.push(c)});saveCats();
-    if(d.start&&confirm('Wczytać też stan początkowy z kopii?'))localStorage.setItem('start',JSON.stringify(d.start));
+    for(const x of d.expenses){const c=clean(x,x&&x.type==='inc'?'inc':'exp');if(c){await putExp(c);n++}}
+    for(const x of inc){const c=clean(x,'inc');if(c){await putExp(c);n++}}
+    const okCat=c=>typeof c==='string'&&c.trim()&&c.length<=40;
+    (d.cats||[]).forEach(c=>{if(okCat(c)&&!cats.includes(c))cats.push(c)});(d.incCats||[]).forEach(c=>{if(okCat(c)&&!incCats.includes(c))incCats.push(c)});saveCats();
+    if(d.start&&confirm('Wczytać też stan początkowy z kopii?'))localStorage.setItem('start',JSON.stringify({PLN:+d.start.PLN||0,EUR:+d.start.EUR||0}));
     renderCats();await refresh();toast('Wczytano '+n+' wpisów')}
   catch(err){alert('Nie udało się wczytać kopii: '+err.message)}};
 

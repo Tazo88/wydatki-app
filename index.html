@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net 'wasm-unsafe-eval'; worker-src 'self' blob: https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://wydatki-receipt.tazo88.workers.dev https://cdn.jsdelivr.net https://tessdata.projectnaptha.com data: blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="theme-color" content="#16a34a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -12,7 +13,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-<link rel="stylesheet" href="style.css?v=5">
+<link rel="stylesheet" href="style.css?v=6">
 </head>
 <body>
 <header><h1>Wydatki</h1><span id="hdrTotal"></span></header>
@@ -101,6 +102,8 @@
   <label class="btn big ghost" for="restore">📂 Wczytaj kopię</label>
   <input id="restore" type="file" accept="application/json,.json" hidden>
   <button id="csvAll" class="btn big ghost">⬇️ Wszystko do CSV</button>
+  <h2 class="sub">Usuń dane</h2>
+  <button id="wipeBtn" class="btn big danger">🗑️ Usuń wszystkie dane z telefonu</button>
   <h2 class="sub">Instalacja</h2>
   <p class="hint">iPhone (Safari): Udostępnij ⬆️ → „Do ekranu początkowego”. Android (Chrome): menu ⋮ → „Dodaj do ekranu głównego” / „Zainstaluj aplikację”.</p>
   <p class="hint">Wskazówka: na iPhonie możesz też dyktować z klawiatury (ikona 🎤 na klawiaturze) w polach kwoty i notatki.</p>
@@ -113,8 +116,8 @@
   <button data-t="set">⚙️<span>Ustawienia</span></button>
 </nav>
 <div id="toast" hidden></div>
-<script src="app.js?v=5"></script>
-<script src="receipt.js?v=5"></script>
-<script src="help.js?v=5"></script>
+<script src="app.js?v=6"></script>
+<script src="receipt.js?v=6"></script>
+<script src="help.js?v=6"></script>
 </body>
 </html>
