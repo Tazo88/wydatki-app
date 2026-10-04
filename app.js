@@ -27,7 +27,10 @@ const DEF_INC=['Wypłata','800+/świadczenia','Przelew od kogoś','Gotówka','Zw
 let cats=JSON.parse(localStorage.getItem('cats')||'null')||DEF_CATS.slice();
 let incCats=JSON.parse(localStorage.getItem('incCats')||'null')||DEF_INC.slice();
 const saveCats=()=>{localStorage.setItem('cats',JSON.stringify(cats));localStorage.setItem('incCats',JSON.stringify(incCats))};
-const getStart=()=>Object.assign({PLN:0,EUR:0},JSON.parse(localStorage.getItem('start')||'{}'));
+const ownStart=()=>Object.assign({PLN:0,EUR:0},JSON.parse(localStorage.getItem('start')||'{}'));
+// podgląd pieniędzy partnera (tylko odczyt; serwer sprawdza zgodę przy każdym odczycie)
+let view=null, pData=null;
+const getStart=()=>view&&pData?Object.assign({},pData.start):ownStart();
 const isInc=x=>x.type==='inc';
 let selCat='Jedzenie', selInc='Wypłata', mode='exp', editId=null, photoData=null, expenses=[];
 let period='m', anchor=new Date();
@@ -49,7 +52,7 @@ $('#rmPhoto').onclick=()=>{photoData=null;showPhoto()};
 $('#cancelEdit').onclick=()=>{resetForm()};
 $('#delBtn').onclick=async()=>{if(editId&&confirm(mode==='inc'?'Usunąć ten wpływ?':'Usunąć ten wydatek?')){await delExp(editId);toast('Usunięto');resetForm();await refresh()}};
 $('#form').onsubmit=async e=>{
-  e.preventDefault();
+  e.preventDefault();if(view)return;
   const amount=parseAmt($('#amount').value);
   if(!(amount>0)){toast('Podaj kwotę');$('#amount').focus();return}
   const old=editId?expenses.find(x=>x.id===editId):null;
@@ -60,18 +63,18 @@ $('#form').onsubmit=async e=>{
   toast(editId?'Zapisano zmiany':(inc?'Wpływ +':'Wydatek −')+fmt(exp.amount,exp.currency));
   resetForm();await refresh();
 };
-function editExpense(id){const x=expenses.find(e=>e.id===id);if(!x)return;showTab('add');editId=id;$('#amount').value=String(x.amount).replace('.',',');$('#currency').value=x.currency;const inc=isInc(x);const list=inc?incCats:cats;if(inc)selInc=x.category;else selCat=x.category;if(!list.includes(x.category)){list.push(x.category);saveCats()}$('#note').value=x.note||'';$('#date').value=x.date;photoData=x.photo||null;showPhoto();$('#saveBtn').textContent='Zapisz zmiany';setMode(inc?'inc':'exp');$('#cancelEdit').hidden=false;$('#delBtn').hidden=false}
+function editExpense(id){if(view)return;const x=expenses.find(e=>e.id===id);if(!x)return;showTab('add');editId=id;$('#amount').value=String(x.amount).replace('.',',');$('#currency').value=x.currency;const inc=isInc(x);const list=inc?incCats:cats;if(inc)selInc=x.category;else selCat=x.category;if(!list.includes(x.category)){list.push(x.category);saveCats()}$('#note').value=x.note||'';$('#date').value=x.date;photoData=x.photo||null;showPhoto();$('#saveBtn').textContent='Zapisz zmiany';setMode(inc?'inc':'exp');$('#cancelEdit').hidden=false;$('#delBtn').hidden=false}
 
 const safePhoto=p=>typeof p==='string'&&/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(p)?p:null;
 function li(x){const inc=isInc(x);const ph=safePhoto(x.photo);return `<li data-id="${esc(x.id)}" class="${inc?'inc':'exp'}">${ph?`<img src="${ph}" alt="">`:''}<div class="i"><b>${esc(x.category)}</b><small>${esc(x.date.split('-').reverse().join('.'))}${x.note?' · '+esc(x.note):''}</small></div><span class="a ${inc?'pos':'neg'}">${inc?'+':'−'}${fmt(x.amount,x.currency)}</span></li>`}
-function bindList(el){el.querySelectorAll('li[data-id]').forEach(l=>l.onclick=()=>editExpense(l.dataset.id))}
+function bindList(el){if(view)return;el.querySelectorAll('li[data-id]').forEach(l=>l.onclick=()=>editExpense(l.dataset.id))}
 const sortExp=a=>a.sort((p,q)=>q.date.localeCompare(p.date)||q.created-p.created);
 
 async function refresh(){
-  expenses=sortExp(await allExp());
+  expenses=sortExp(view&&pData?pData.entries.slice():await allExp());
   const r=$('#recent');r.innerHTML=expenses.slice(0,10).map(li).join('')||'<li class="empty">Brak wpisów — dodaj pierwszy 🙂</li>';bindList(r);
   const today=ymd(new Date());const t=expenses.filter(x=>x.date===today&&x.currency==='PLN'&&!isInc(x)).reduce((s,x)=>s+x.amount,0);
-  $('#hdrTotal').textContent='Dziś wydane: '+fmt(t);
+  $('#hdrTotal').textContent=(view?view.name+': ':'')+'Dziś wydane: '+fmt(t);
   renderBalance();
   if($('#tab-rep').classList.contains('active'))renderReport();
 }
@@ -209,21 +212,21 @@ function csv(list){const q=s=>{s=String(s??'');if(/^[=+\-@\t\r]/.test(s)&&!/^-?\
   return '\uFEFF'+rows.map(r=>r.map(q).join(';')).join('\r\n')+'\r\n'}
 function download(name,content,type){const b=new Blob([content],{type});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1500)}
 $('#csvBtn').onclick=()=>{const p=periodData();download('wydatki_'+p.s+'_'+p.e+'.csv',csv(p.list),'text/csv;charset=utf-8')};
-$('#csvAll').onclick=()=>download('wydatki_wszystkie_'+ymd(new Date())+'.csv',csv(expenses),'text/csv;charset=utf-8');
+$('#csvAll').onclick=async()=>download('wydatki_wszystkie_'+ymd(new Date())+'.csv',csv(await allExp()),'text/csv;charset=utf-8');
 function summary(){const p=periodData();return `Moje pieniądze – ${p.label}\nWpływy: +${totStr(p.inc.tot)}\nWydatki: −${totStr(p.tot)}\n`+p.cats.map(x=>`• ${x.c}: ${fmt(x.v,x.cur)}`).join('\n')+`\nBilans: ${bilStr(p.bil)}\nSaldo na koniec: ${fmt(p.end.PLN)}`+(usesEUR()?' / '+fmt(p.end.EUR,'EUR'):'')}
 $('#shareBtn').onclick=async()=>{const t=summary();if(navigator.share){try{await navigator.share({title:'Wydatki',text:t})}catch(e){}}else{try{await navigator.clipboard.writeText(t);toast('Skopiowano podsumowanie')}catch(e){alert(t)}}};
 
 // ---------- settings ----------
 function renderIncList(){const l=$('#incList');l.innerHTML=incCats.map((c,i)=>`<li><div class="i">${esc(c)}</div>${DEF_INC.includes(c)?'':`<button class="btn small danger" data-i="${i}">Usuń</button>`}</li>`).join('');
   l.querySelectorAll('button[data-i]').forEach(b=>b.onclick=()=>{const c=incCats[b.dataset.i];if(confirm('Usunąć źródło „'+c+'”? (wpisy zostaną)')){incCats.splice(b.dataset.i,1);saveCats();if(selInc===c)selInc='Inne';renderIncList();renderCats()}})
-  $('#defCur').value=localStorage.getItem('cur')||'PLN';const st=getStart();$('#startPLN').value=st.PLN?String(st.PLN).replace('.',','):'';$('#startEUR').value=st.EUR?String(st.EUR).replace('.',','):''}
+  $('#defCur').value=localStorage.getItem('cur')||'PLN';const st=ownStart();$('#startPLN').value=st.PLN?String(st.PLN).replace('.',','):'';$('#startEUR').value=st.EUR?String(st.EUR).replace('.',','):''}
 $('#addInc').onclick=()=>{const v=$('#newInc').value.trim();if(!v)return;if(!incCats.some(c=>c.toLowerCase()===v.toLowerCase())){incCats.splice(incCats.length-1,0,v);saveCats()}$('#newInc').value='';renderIncList();renderCats();toast('Dodano źródło')};
 $('#defCur').onchange=e=>{localStorage.setItem('cur',e.target.value);if(!editId)$('#currency').value=e.target.value;toast('Domyślna waluta: '+e.target.value)};
 $('#saveStart').onclick=()=>{const v=s=>{const n=parseFloat(String(s).replace(/\s/g,'').replace(',','.').replace(/[^\d.-]/g,''));return isFinite(n)?Math.round(n*100)/100:0};localStorage.setItem('start',JSON.stringify({PLN:v($('#startPLN').value),EUR:v($('#startEUR').value)}));renderBalance();toast('Zapisano stan początkowy')};
 function renderCatList(){renderIncList();const l=$('#catList');l.innerHTML=cats.map((c,i)=>`<li><div class="i">${esc(c)}</div>${DEF_CATS.includes(c)?'':`<button class="btn small danger" data-i="${i}">Usuń</button>`}</li>`).join('');
   l.querySelectorAll('button[data-i]').forEach(b=>b.onclick=()=>{const c=cats[b.dataset.i];if(confirm('Usunąć kategorię „'+c+'”? (wydatki zostaną)')){cats.splice(b.dataset.i,1);saveCats();if(selCat===c)selCat='Inne';renderCatList();renderCats()}})}
 $('#addCat').onclick=()=>{const v=$('#newCat').value.trim();if(!v)return;if(!cats.some(c=>c.toLowerCase()===v.toLowerCase())){cats.splice(cats.length-1,0,v);saveCats()}$('#newCat').value='';renderCatList();renderCats();toast('Dodano kategorię')};
-$('#backupBtn').onclick=()=>download('wydatki_kopia_'+ymd(new Date())+'.json',JSON.stringify({app:'wydatki',v:2,exported:new Date().toISOString(),cats,incCats,start:getStart(),expenses:expenses.filter(x=>!isInc(x)),incomes:expenses.filter(isInc)}),'application/json');
+$('#backupBtn').onclick=async()=>{const own=sortExp(await allExp());download('wydatki_kopia_'+ymd(new Date())+'.json',JSON.stringify({app:'wydatki',v:2,exported:new Date().toISOString(),cats,incCats,start:ownStart(),expenses:own.filter(x=>!isInc(x)),incomes:own.filter(isInc)}),'application/json')};
 // walidacja wpisów z pliku kopii (niezaufane dane)
 function clean(x,type){if(!x||typeof x!=='object')return null;const a=+x.amount;
   if(!(typeof x.id==='string'&&/^[\w-]{1,64}$/.test(x.id))||!/^\d{4}-\d{2}-\d{2}$/.test(x.date||'')||!isFinite(a))return null;
@@ -241,6 +244,25 @@ $('#restore').onchange=async e=>{const f=e.target.files[0];e.target.value='';if(
     if(d.start&&confirm('Wczytać też stan początkowy z kopii?'))localStorage.setItem('start',JSON.stringify({PLN:+d.start.PLN||0,EUR:+d.start.EUR||0}));
     renderCats();await refresh();toast('Wczytano '+n+' wpisów')}
   catch(err){alert('Nie udało się wczytać kopii: '+err.message)}};
+
+// ---------- podgląd: Moje / partner ----------
+const sharers=()=>window.WY&&WY.loggedIn()?WY.members().filter(m=>m.shares):[];
+function renderWho(){const list=sharers();
+  if(view&&!list.some(m=>m.id===view.id)){setView('');return}
+  document.querySelectorAll('.who').forEach(el=>{el.hidden=!list.length;el.innerHTML=list.length?`<button data-w="" class="${view?'':'on'}">Moje</button>`+list.map(m=>`<button data-w="${esc(m.id)}" class="${view&&view.id===m.id?'on':''}">${esc(m.name)}</button>`).join(''):''})}
+async function setView(id){
+  if(!id){view=null;pData=null}
+  else{const m=sharers().find(x=>x.id===id);if(!m)return;
+    try{const d=await WY.partnerMoney(id);const st=d.start||{};view={id,name:m.name};
+      pData={entries:d.entries.map(x=>clean(x,x&&x.type==='inc'?'inc':'exp')).filter(Boolean),start:{PLN:+st.PLN||0,EUR:+st.EUR||0}}}
+    catch(err){view=null;pData=null;toast(err.status===403?'Ta osoba wyłączyła udostępnianie':WY.errMsg(err));if(WY.refreshMe)WY.refreshMe()}}
+  if(view&&editId)resetForm();
+  document.body.classList.toggle('viewing',!!view);
+  $('.bal-t').textContent=view?'👀 '+view.name+' — zostało (tylko podgląd)':'💰 Moje pieniądze — zostało';
+  renderWho();await refresh();
+}
+document.addEventListener('click',e=>{const b=e.target.closest('.who button');if(b)setView(b.dataset.w)});
+addEventListener('wy-synced',()=>{if(view)setView(view.id)});
 
 // ---------- init ----------
 resetForm();renderCats();refresh();
