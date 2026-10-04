@@ -22,7 +22,12 @@ const steps=[
  ['📷','Paragon (AI)','Stuknij <b>📷 Paragon</b> i zrób ostre zdjęcie całego paragonu. AI odczyta sklep, datę, walutę, produkty i ich kategorie. Na ekranie <b>Sprawdź paragon</b> popraw, co trzeba, i stuknij <b>Zapisz wg kategorii</b> (osobny wydatek dla każdej kategorii, oznaczony 🧾) albo <b>Zapisz jako jeden</b>. Długi paragon? <b>Dodaj kolejne zdjęcie</b>. ⚠️ żółta ramka = produkty nie sumują się do kwoty paragonu.'],
  ['✏️','Popraw lub usuń','Stuknij wpis na liście → zmień i <b>Zapisz zmiany</b> albo <b>Usuń wydatek</b>.'],
  ['📊','Raporty','Zakładka <b>Raporty</b>: Dzień / Tydzień / Miesiąc – wpływy, wydatki, bilans i saldo. Strzałki ‹ › zmieniają okres. <b>CSV</b> do Excela, <b>Udostępnij</b> wysyła podsumowanie.'],
- ['💾','Kopia zapasowa','Dane są <b>tylko na tym telefonie</b>. Co jakiś czas: Ustawienia → <b>Zapisz kopię</b> i zachowaj plik (np. w mailu lub iCloud).']
+ ['📅','Plan (wspólny)','Zakładka <b>Plan</b>: terminy 📅, zadania ✅ i zakupy 🛒. Napisz albo powiedz 🎤 np. <i>„jutro 15:00 dentysta, kup mleko i chleb”</i> i stuknij <b>✨ Dodaj</b> – AI samo rozpozna daty, godziny i osobne produkty. Odhaczaj ☑️, stuknij wpis, żeby go zmienić. 📆 dodaje termin do kalendarza telefonu.'],
+ ['🔎','Gdzie kupić?','Przy zakupach stuknij <b>🔎</b> – dostaniesz podpowiedź, gdzie to kupić, i linki (mapa sklepów w pobliżu, porównanie cen).'],
+ ['👤','Konto (opcjonalne)','Ustawienia → wpisz imię → <b>Załóż konto</b>. Zapisz pokazany <b>klucz odzyskiwania</b> 🔑 (zrzut ekranu). Dane są wtedy też w chmurze i na Twoich innych urządzeniach (Ustawienia → <b>📱 Dodaj moje drugie urządzenie</b>).'],
+ ['👫','Połącz się z partnerką/partnerem','Oboje zakładacie konto. Osoba 1: Ustawienia → <b>➕ Zaproś (pokaż kod)</b>. Osoba 2: Ustawienia → wpisuje kod w <b>„Mam kod”</b> → <b>Dołącz</b>. Kod działa raz, 15 minut. Od teraz <b>Plan jest wspólny</b>, a <b>pieniądze każdy ma swoje</b> – druga osoba ich nie widzi.'],
+ ['🔔','Przypomnienia','Ustawienia → <b>Włącz powiadomienia</b> i zezwól. Przy terminie wybierz, kiedy przypomnieć – powiadomienie przyjdzie na telefony obu osób. iPhone: tylko w aplikacji z ikonki na ekranie (iOS 16.4+). Zawsze działa też 📆 (alarm w kalendarzu).'],
+ ['💾','Kopia zapasowa','Bez konta dane są <b>tylko na tym telefonie</b>. Co jakiś czas: Ustawienia → <b>Zapisz kopię</b> i zachowaj plik (np. w mailu lub iCloud).']
 ];
 
 const css=`#help{position:fixed;inset:0;z-index:50;background:var(--bg);overflow-y:auto;-webkit-overflow-scrolling:touch;padding:calc(env(safe-area-inset-top) + 14px) 16px calc(env(safe-area-inset-bottom) + 20px)}

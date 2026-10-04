@@ -13,7 +13,7 @@ jobs:
       - name: Build static site (decode icons)
         run: |
           mkdir -p _site/icons
-          cp index.html style.css app.js help.js receipt.js sw.js manifest.webmanifest _site/
+          cp index.html style.css app.js help.js receipt.js sync.js plan.js sw.js manifest.webmanifest _site/
           (pip install -q pillow || pip install -q --break-system-packages pillow) && python3 make_icons.py _site/icons
           touch _site/.nojekyll
           ls -la _site _site/icons
