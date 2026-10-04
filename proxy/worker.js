@@ -12,10 +12,10 @@ const ALPHA = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ'; // 32 znaki, bez 0/O/1/I
 const PUSH_HOSTS = [/^fcm\.googleapis\.com$/, /^android\.googleapis\.com$/, /(^|\.)push\.apple\.com$/, /(^|\.)push\.services\.mozilla\.com$/, /(^|\.)notify\.windows\.com$/];
 // limity: [ile, okno w sekundach]
 const LIM = {
-  register: [5, 3600], recover: [10, 3600], redeem: [10, 600], mkcode: [10, 3600],
+  register: [10, 3600], recover: [10, 3600], redeem: [10, 600], mkcode: [10, 3600],
   invite: [10, 3600], joinU: [10, 3600], joinIP: [20, 3600], failAll: [100, 3600],
   receiptMin: [6, 60], receiptDay: [60, 86400], parseMin: [15, 60], parseDay: [200, 86400],
-  whereMin: [6, 60], whereDay: [50, 86400], geminiGlobal: [3000, 86400], push: [20, 3600],
+  whereMin: [6, 60], whereDay: [50, 86400], geminiGlobal: [3000, 86400], push: [20, 3600], partner: [60, 60],
 };
 
 // ---------- utils ----------
@@ -60,6 +60,8 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS push_user ON push_subs(user_id)`,
   `CREATE TABLE IF NOT EXISTS rate(k TEXT PRIMARY KEY, n INTEGER NOT NULL, reset INTEGER NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS config(k TEXT PRIMARY KEY, v TEXT NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS shares(owner_id TEXT PRIMARY KEY, household_id TEXT NOT NULL, created INTEGER NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS signup_codes(hash TEXT PRIMARY KEY, role TEXT NOT NULL, expires INTEGER NOT NULL, created INTEGER NOT NULL)`,
 ];
 let schemaReady;
 const ensureSchema = env => schemaReady || (schemaReady = env.DB.batch(SCHEMA.map(s => env.DB.prepare(s))).catch(e => { schemaReady = null; throw e; }));
@@ -106,17 +108,35 @@ async function failGuard(env, key, limit) {
 }
 const failed = (env, key, lim) => hit(env, key, lim).catch(() => {});
 
+// Rejestracja tylko z zaproszeniem: kod domu (8 znaków, od osoby z kontem – od razu łączy z jej domem)
+// albo jednorazowy kod startowy (16 znaków, wygenerowany po stronie serwera, np. kod właściciela).
 async function register(env, req, body) {
   await hit(env, 'reg:' + ip(req), LIM.register);
+  await failGuard(env, 'fail:reg', LIM.failAll[0]);
   const name = str(body.name, 40).trim();
   if (!name) fail(400, 'name');
-  const id = newId('u_'), hid = newId('h_');
-  const recovery = code(24).match(/.{4}/g).join('-');
-  await env.DB.batch([
-    env.DB.prepare('INSERT INTO users(id,name,recovery_hash,created) VALUES(?,?,?,?)').bind(id, name, await sha('rk:' + normCode(recovery)), now()),
-    env.DB.prepare('INSERT INTO households(id,created) VALUES(?,?)').bind(hid, now()),
-    env.DB.prepare('INSERT INTO members(user_id,household_id,joined) VALUES(?,?,?)').bind(id, hid, now()),
-  ]);
+  const c = normCode(body.code);
+  if (!c) fail(403, 'invite_required');
+  const DB = env.DB;
+  let hid = null, role = null;
+  if (c.length === 8) {
+    const inv = await DB.prepare('DELETE FROM invites WHERE hash=? RETURNING household_id, expires').bind(await sha('inv:' + c)).first();
+    if (inv && inv.expires >= now()) {
+      const cnt = await DB.prepare('SELECT COUNT(*) n FROM members WHERE household_id=?').bind(inv.household_id).first();
+      if (cnt.n >= 6) fail(400, 'full');
+      if (cnt.n >= 1) hid = inv.household_id;
+    }
+  } else if (c.length === 16) {
+    const sc = await DB.prepare('DELETE FROM signup_codes WHERE hash=? RETURNING role, expires').bind(await sha('su:' + c)).first();
+    if (sc && sc.expires >= now()) role = sc.role;
+  }
+  if (!hid && !role) { await failed(env, 'fail:reg', LIM.failAll); fail(400, 'bad_code'); }
+  const id = newId('u_'), recovery = code(24).match(/.{4}/g).join('-');
+  const st = [DB.prepare('INSERT INTO users(id,name,recovery_hash,created) VALUES(?,?,?,?)').bind(id, name, await sha('rk:' + normCode(recovery)), now())];
+  if (!hid) { hid = newId('h_'); st.push(DB.prepare('INSERT INTO households(id,created) VALUES(?,?)').bind(hid, now())); }
+  st.push(DB.prepare('INSERT INTO members(user_id,household_id,joined) VALUES(?,?,?)').bind(id, hid, now()));
+  if (role === 'owner') st.push(DB.prepare("INSERT OR IGNORE INTO config(k,v) VALUES('owner',?)").bind(id));
+  await DB.batch(st);
   return { token: await newSession(env, id), recovery, user: { id, name } };
 }
 async function recover(env, req, body) {
@@ -146,8 +166,30 @@ async function redeem(env, req, body) {
   return { token: await newSession(env, u.id), user: u };
 }
 async function me(env, u) {
-  const mem = await env.DB.prepare('SELECT u.id, u.name FROM members m JOIN users u ON u.id=m.user_id WHERE m.household_id=? ORDER BY m.joined').bind(u.hid).all();
-  return { user: { id: u.id, name: u.name }, household: { members: mem.results } };
+  const mem = await env.DB.prepare('SELECT u.id, u.name, (SELECT COUNT(*) FROM shares s WHERE s.owner_id=u.id AND s.household_id=m.household_id) sh FROM members m JOIN users u ON u.id=m.user_id WHERE m.household_id=? ORDER BY m.joined').bind(u.hid).all();
+  const mine = mem.results.find(r => r.id === u.id);
+  const ow = await env.DB.prepare("SELECT v FROM config WHERE k='owner'").first();
+  return { user: { id: u.id, name: u.name }, share: !!(mine && mine.sh), owner: !!ow && ow.v === u.id,
+    household: { members: mem.results.map(r => ({ id: r.id, name: r.name, shares: r.id !== u.id && !!r.sh })) } };
+}
+// ---------- udostępnianie pieniędzy partnerowi (opcjonalne, tylko podgląd) ----------
+async function setShare(env, u, body) {
+  if (body.on === true) await env.DB.prepare('INSERT OR REPLACE INTO shares(owner_id,household_id,created) VALUES(?,?,?)').bind(u.id, u.hid, now()).run();
+  else await env.DB.prepare('DELETE FROM shares WHERE owner_id=?').bind(u.id).run();
+  return { share: body.on === true };
+}
+async function partnerMoney(env, u, body) {
+  await hit(env, 'pv:' + u.id, LIM.partner);
+  const owner = str(body.owner, 40);
+  if (!/^u_[0-9a-f]{24}$/.test(owner) || owner === u.id) fail(403, 'not_shared');
+  // sprawdzane przy KAŻDYM odczycie: zgoda właściciela + obie osoby w tym samym domu
+  const ok = await env.DB.prepare('SELECT 1 x FROM shares s JOIN members m ON m.user_id=s.owner_id AND m.household_id=s.household_id WHERE s.owner_id=? AND s.household_id=?').bind(owner, u.hid).first();
+  if (!ok) fail(403, 'not_shared');
+  const [es, ei] = cur(body.since), LIMIT = 500;
+  const er = (await env.DB.prepare(`SELECT id,data,srv FROM entries WHERE user_id=?1 AND deleted=0 AND (srv>?2 OR (srv=?2 AND id>?3)) ORDER BY srv,id LIMIT ${LIMIT}`).bind(owner, es, ei).all()).results;
+  const st = await env.DB.prepare("SELECT v FROM user_kv WHERE user_id=? AND k='start'").bind(owner).first();
+  return { entries: er.map(r => ({ id: r.id, data: JSON.parse(r.data) })), start: st ? JSON.parse(st.v) : null,
+    since: er.length ? er[er.length - 1].srv + ':' + er[er.length - 1].id : '0:', more: er.length === LIMIT };
 }
 
 // ---------- dom (para) ----------
@@ -160,7 +202,7 @@ async function invite(env, u) {
 }
 async function moveTo(env, u, target) {
   const left = await env.DB.prepare('SELECT COUNT(*) n FROM members WHERE household_id=?').bind(u.hid).first();
-  const t = now(), st = [env.DB.prepare('UPDATE members SET household_id=?, joined=? WHERE user_id=?').bind(target, t, u.id)];
+  const t = now(), st = [env.DB.prepare('UPDATE members SET household_id=?, joined=? WHERE user_id=?').bind(target, t, u.id), env.DB.prepare('DELETE FROM shares WHERE owner_id=?').bind(u.id)];
   if (left.n <= 1) { // stary dom pusty → przenieś jego plan do nowego domu
     st.push(env.DB.prepare(`INSERT OR IGNORE INTO plan_items(household_id,id,kind,title,notes,due,done,remind_at,reminded,created_by,updated,deleted,srv)
       SELECT ?1,id,kind,title,notes,due,done,remind_at,reminded,created_by,updated,deleted,?2 FROM plan_items WHERE household_id=?3`).bind(target, t, u.hid),
@@ -189,7 +231,7 @@ async function leave(env, u) {
   if (left.n <= 1) fail(400, 'alone');
   const hid = newId('h_');
   await env.DB.batch([env.DB.prepare('INSERT INTO households(id,created) VALUES(?,?)').bind(hid, now()),
-    env.DB.prepare('UPDATE members SET household_id=?, joined=? WHERE user_id=?').bind(hid, now(), u.id)]);
+    env.DB.prepare('UPDATE members SET household_id=?, joined=? WHERE user_id=?').bind(hid, now(), u.id), env.DB.prepare('DELETE FROM shares WHERE owner_id=?').bind(u.id)]);
   return { ok: true };
 }
 
@@ -257,6 +299,8 @@ async function deleteAccount(env, u) {
     DB.prepare('DELETE FROM sessions WHERE user_id=?').bind(u.id),
     DB.prepare('DELETE FROM login_codes WHERE user_id=?').bind(u.id),
     DB.prepare('DELETE FROM push_subs WHERE user_id=?').bind(u.id),
+    DB.prepare('DELETE FROM shares WHERE owner_id=?').bind(u.id),
+    DB.prepare("DELETE FROM config WHERE k='owner' AND v=?").bind(u.id),
     DB.prepare('DELETE FROM invites WHERE created_by=?').bind(u.id),
     DB.prepare('DELETE FROM members WHERE user_id=?').bind(u.id),
     DB.prepare('UPDATE plan_items SET created_by=NULL WHERE created_by=?').bind(u.id),
@@ -394,9 +438,9 @@ function receiptSchema(cats) {
     required: ['shop', 'currency', 'total', 'items'] };
 }
 const userCats = (a, def) => [...new Set([...def, ...(Array.isArray(a) ? a : []).filter(c => typeof c === 'string' && c.trim() && c.length <= 40).slice(0, 40)])];
-async function receipt(env, req, body) {
-  await hit(env, 'rcm:' + ip(req), LIM.receiptMin);
-  await hit(env, 'rcd:' + ip(req), LIM.receiptDay);
+async function receipt(env, u, body) {
+  await hit(env, 'rcm:' + u.id, LIM.receiptMin);
+  await hit(env, 'rcd:' + u.id, LIM.receiptDay);
   const imgs = (Array.isArray(body.images) ? body.images : []).slice(0, MAX_IMAGES)
     .filter(i => i && typeof i.data === 'string' && /^image\/(jpeg|png|webp|heic|heif)$/.test(i.mime || ''));
   if (!imgs.length) fail(400, 'no_image');
@@ -490,7 +534,8 @@ async function body(req, max) {
 async function route(req, env, path) {
   const M = req.method;
   await ensureSchema(env);
-  if (path === '/' && M === 'POST') return receipt(env, req, await body(req, MAX_BODY));
+  // AI (Gemini) tylko dla zalogowanych – bez konta aplikacja czyta paragon lokalnie (Tesseract)
+  if (path === '/' && M === 'POST') { const u = await auth(req, env); return receipt(env, u, await body(req, MAX_BODY)); }
   if (!path.startsWith('/api/')) fail(404, 'not_found');
   const p = path.slice(5);
   if (M === 'GET' && p === 'push/key') return { key: (await vapid(env)).pub };
@@ -514,6 +559,8 @@ async function route(req, env, path) {
     const res = []; for (const s of subs) { try { res.push(await sendPush(env, s, { title: '🔔 Wydatki', body: 'Powiadomienia działają!', tag: 'test' })); } catch { res.push(0); } }
     return { sent: res };
   }
+  if (M === 'POST' && p === 'share') return setShare(env, u, await body(req, 1024));
+  if (M === 'POST' && p === 'partner/money') return partnerMoney(env, u, await body(req, 4096));
   if (M === 'POST' && p === 'parse') return parse(env, u, await body(req, 8192));
   if (M === 'POST' && p === 'where') return where(env, u, await body(req, 4096));
   fail(404, 'not_found');
