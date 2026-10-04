@@ -31,7 +31,7 @@ function b64(img){return scaled(img,1600).toDataURL('image/jpeg',0.72).split(','
 async function addFiles(files){for(const f of files){const img=await loadImg(f);shots.push({data:b64(img),thumb:scaled(img,480,0.6)})}}
 async function callProxy(){
   const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),60000);
-  try{const r=await fetch(PROXY,{method:'POST',headers:{'Content-Type':'application/json'},signal:ctl.signal,
+  try{const r=await fetch(PROXY,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+(window.WY&&WY.token()||'')},signal:ctl.signal,
       body:JSON.stringify({images:shots.slice(0,4).map(s=>({mime:'image/jpeg',data:s.data})),categories:cats.filter(c=>!DEF_CATS.includes(c))})});
     const j=await r.json();if(!r.ok||j.error)throw new Error(j.error||('HTTP '+r.status));return j}
   finally{clearTimeout(t)}
@@ -40,7 +40,8 @@ async function callProxy(){
 photo.onchange=async e=>{
   const files=[...e.target.files];
   if(!files.length)return;
-  if(editId||!navigator.onLine)return ocrFallback.call(photo,{target:{files,value:''}});
+  // AI tylko z kontem; bez konta – lokalny odczyt na telefonie
+  if(editId||!navigator.onLine||!(window.WY&&WY.loggedIn()))return ocrFallback.call(photo,{target:{files,value:''}});
   photo.value='';shots=[];
   try{
     await addFiles(files);photoData=shots[0].thumb;showPhoto();
